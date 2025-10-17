@@ -10,6 +10,13 @@ authors = [
 ]
 dependencies = [
     "pre-commit>=4.3.0",
+    "openfusiontoolkit",
+    "freeqdsk>=0.5.2",
+    "xarray>=2025.10.1",
+    "scipy>=1.16.2",
+    "pyvista>=0.46.3",
+    "matplotlib>=3.10.7",
+    "h5py>=3.15.1",
 ]
 
 [dependency-groups]
@@ -24,6 +31,9 @@ dev = [
     "tomllint>=0.3.0",
     "yamllint>=1.37.1",
 ]
+
+[tool.uv.sources]
+openfusiontoolkit = {path = "submodules/OpenFUSIONToolkit/python", editable = true}
 
 [tool.isort]
 profile = "black"

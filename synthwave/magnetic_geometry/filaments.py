@@ -1,0 +1,316 @@
+from typing import Optional
+from enum import Enum
+from abc import ABC, abstractmethod
+import numpy as np
+from scipy.interpolate import make_interp_spline
+from scipy.optimize import newton
+from fractions import Fraction
+
+from synthwave.magnetic_geometry.equilibrium_field import (
+    EquilibriumField,
+    biot_savart_cylindrical,
+)
+
+
+# Types of filament tracing methods
+class TraceType(Enum):
+    CYLINDRICAL = 0  # Cylindrical approximation of the magnetic geometry
+    NAIVE = 1  # Naive tracing, following the rational surface but not the field
+    SINGLE = (
+        2  # Single tracing method, using the magnetic field to determine d(phi)/d(eta)
+    )
+    AVERAGE = 3  # Average tracing method, using the magnetic field to determine d(phi)/d(eta) and averaging between points
+
+
+class BaseFilament(ABC):
+    """Abstract class for filament representation."""
+
+    def __init__(self, m: int, n: int, num_points: Optional[int] = 1000):
+        self.m = m
+        self.n = n
+        self.num_points = num_points
+        self.traces = {}  # Dict to store traces of different numbers of points
+
+    @abstractmethod
+    def _trace(
+        self, num_filament_points: Optional[int] = None
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Trace the filament and return the points in cylindrical coordinates (R, phi, Z)"""
+
+    def trace(
+        self, num_filament_points: Optional[int] = None
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Trace the filament and return the points in cylindrical coordinates (R, phi, Z), and the corresponding eta values."""
+        if num_filament_points in self.traces:
+            filament_points, filament_etas = self.traces[num_filament_points]
+        else:
+            filament_points, filament_etas = self._trace(num_filament_points)
+            self.traces[num_filament_points] = (filament_points, filament_etas)
+
+        return filament_points, filament_etas
+
+    def make_filament_spline(self):
+        """Create a spline which puts eta in terms of phi for this filament."""
+        filament_points, filament_etas = self._trace(self.num_points)
+
+        spline = make_interp_spline(filament_points[:, 1], filament_etas)
+        return spline
+
+    def normalized_filament_field(
+        self,
+        eval_points: np.ndarray,
+        phi_0: float = 0,
+        num_filament_points: Optional[int] = None,
+        num_filaments: Optional[int] = 1,
+    ) -> np.ndarray:
+        """For a grid of points in R, phi, Z, find the normalized magnetic field at those points.
+
+        Parameters
+        ----------
+        eval_points : np.ndarray
+            Array of shape (N, 3) where each row is [R, phi, Z] in cylindrical coordinates.
+        phi_0 : float, optional
+            Initial phi offset for the mode's phase.
+        num_filament_points : int, optional
+            Number of points within each filament.
+        num_filaments : int, optional
+            Number of filaments to trace.
+
+        Returns
+        -------
+        np.ndarray
+            Array of shape (N, 3) where each row is the normalized magnetic field [Br, Bphi, Bz] at the corresponding eval_points.
+        """
+
+        # Filaments are evenly spaced toroidally and have a periodic current distribution
+        filament_angle = np.linspace(0, 2 * np.pi, num_filaments, endpoint=False)
+        filament_current = np.cos((filament_angle * self.n)) / num_filaments
+        filament_angle += phi_0  # Apply phase offset to rotate all filaments (needs to happen after the current is defined)
+
+        primary_filament_points, _ = self.trace(num_filament_points)
+        vacuum_field = np.zeros((len(eval_points), 3))
+        for i, point in enumerate(eval_points):
+            # Contribution from each filament
+            for phi, current in zip(filament_angle, filament_current):
+                filament_points = primary_filament_points + np.array([0, phi, 0])
+                vacuum_field[i, :] += biot_savart_cylindrical(
+                    point, filament_points, current
+                )
+
+
+class ToroidalFilament(BaseFilament):
+    """Filament for toroidal approximation of the magnetic geometry."""
+
+    def __init__(
+        self,
+        m: int,
+        n: int,
+        R0: float,
+        Z0: float,
+        a: float,
+        num_points: Optional[int] = 1000,
+    ):
+        """Initialize a toroidal filament with a circular cross-section.
+
+        Parameters
+        ----------
+        m : int
+            Poloidal mode number
+        n : int
+            Toroidal mode number
+        R0 : float
+            Major radius of the magnetic axis
+        Z0 : float
+            Vertical position of the magnetic axis
+        a : float
+            Minor radius of the circular cross-section
+        num_points : int, optional
+            Number of points to trace around the filament
+
+        """
+        super().__init__(m, n, num_points)
+        self.R0 = R0
+        self.Z0 = Z0
+        self.a = a
+
+    def _trace(
+        self, num_filament_points: Optional[int] = None
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if num_filament_points is None:
+            num_filament_points = self.num_points
+
+        # Create a circular filament around the magnetic axis
+        phi = np.linspace(0, 2 * np.pi * self.m, num_filament_points)
+        R = self.R0 + self.a * np.cos(phi)
+        Z = self.Z0 + self.a * np.sin(phi)
+
+        filament_points = np.column_stack((R, phi, Z))
+        filament_etas = np.linspace(0, 2 * np.pi, num_filament_points)
+
+        return filament_points, filament_etas
+
+
+# Filament for equilibrium-based fields
+class EquilibriumFilament(BaseFilament):
+    def __init__(
+        self,
+        m: int,
+        n: int,
+        eq_field: EquilibriumField,
+        num_points: Optional[int] = 1000,
+    ):
+        """Initialize an equilibrium filament.
+
+        Parameters
+        ----------
+        m : int
+            Poloidal mode number
+        n : int
+            Toroidal mode number
+        eq_field : EquilibriumField
+            EquilibriumField object containing the magnetic field data
+        num_points : int, optional
+            Number of points to trace around the filament
+
+        """
+        super().__init__(m, n, num_points)
+        self.eq_field = eq_field
+
+    def _trace(
+        self,
+        num_filament_points: Optional[int] = None,
+        method: TraceType = TraceType.SINGLE,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Trace a filament"""
+        if num_filament_points is None:
+            num_filament_points = self.num_points
+
+        # Correction for m/n as integer multiples (otherwise leads to ``wandering'' filaments)
+        ratio = Fraction(self.m, self.n)
+        self.m_local = ratio.numerator
+        self.n_local = ratio.denominator
+
+        num_points = (
+            num_filament_points * self.m_local
+        )  # Scale by m to get enough resolution for higher modes
+
+        psi_q = self.eq_field.get_psi_of_q(self.m / self.n)
+        # print(f"psi corresponding to q={self.m}/{self.n} is {psi_q}")
+
+        # Use local n to ensure we don't wrap around the torus more than necessary
+        filament_etas = np.linspace(0, 2 * np.pi * self.n_local, num_points)
+        poloidal_points = np.zeros((num_points, 3))  # R, Z, a
+
+        # Start at the outboard midplane, slightly outside magnetic axis
+        Z_start = self.eq_field.eqdsk.zmagx
+        R_guess = self.eq_field.eqdsk.rmagx + 0.1
+        R_start = newton(
+            func=lambda R: self.eq_field.psi.ev(R, Z_start) - psi_q,
+            x0=R_guess,
+            fprime=lambda R: self.eq_field.psi.ev(R, Z_start, dx=1, dy=0),
+            maxiter=800,
+            tol=1e-3,
+        )
+        # print(f"Starting point for tracing: R={R_start}, Z={Z_start}")
+
+        # Sliding along minor radius a to meet the rational surface
+        def _R_a(eta, a):
+            R = self.eq_field.eqdsk.rmagx + (a * np.cos(eta))
+            return R
+
+        def _Z_a(eta, a):
+            Z = self.eq_field.eqdsk.zmagx - (a * np.sin(eta))
+            return Z
+
+        def psi_prime_a(eta, a):
+            # Derivative of psi with respect to a at a given eta
+            R = _R_a(eta, a)
+            Z = _Z_a(eta, a)
+            return self.eq_field.psi.ev(R, Z, dx=1, dy=0) * np.cos(
+                eta
+            ) - self.eq_field.psi.ev(R, Z, dx=0, dy=1) * np.sin(eta)
+
+        for i, eta in enumerate(filament_etas):
+            if i == 0:
+                R_prev = R_start
+                Z_prev = Z_start
+            else:
+                R_prev = poloidal_points[i - 1, 0]
+                Z_prev = poloidal_points[i - 1, 1]
+            a_guess = np.sqrt(
+                (R_prev - self.eq_field.eqdsk.rmagx) ** 2
+                + (Z_prev - self.eq_field.eqdsk.zmagx) ** 2
+            )
+            a_next = newton(
+                func=lambda a: self.eq_field.psi.ev(_R_a(eta, a), _Z_a(eta, a)) - psi_q,
+                x0=a_guess,
+                fprime=lambda a: psi_prime_a(eta, a),
+            )
+            poloidal_points[i, :] = [_R_a(eta, a_next), _Z_a(eta, a_next), a_next]
+
+        def _d_phi(r, R, Bp, Bt, d_eta):
+            # https://wiki.fusion.ciemat.es/wiki/Rotational_transform
+            return (Bt * r * d_eta) / (R * Bp)
+
+        # Finalize filament trace based on method
+        if method == TraceType.CYLINDRICAL:
+            # Circular cross section around the magnetic axis
+            avg_minor_radius = np.mean(poloidal_points[:, 2])
+            R = self.eq_field.eqdsk.rmagx + avg_minor_radius * np.cos(filament_etas)
+            phi = filament_etas * self.m / self.n
+            Z = self.eq_field.eqdsk.zmagx - avg_minor_radius * np.sin(filament_etas)
+            filament_points = np.column_stack((R, phi, Z))
+        elif method == TraceType.NAIVE:
+            # Follows the rational surface but not the magnetic field
+            phi = filament_etas * self.m / self.n
+            filament_points = np.column_stack(
+                (poloidal_points[:, 0], phi, poloidal_points[:, 1])
+            )
+        elif method in [TraceType.SINGLE, TraceType.AVERAGE]:
+            # determine d(phi)/d(eta) from magnetic field
+            R = poloidal_points[:, 0]
+            Z = poloidal_points[:, 1]
+            r = poloidal_points[:, 2]
+            B = self.eq_field.get_field_at_point(R, Z)
+            d_eta = np.mean(np.diff(filament_etas))
+            d_phi = _d_phi(r, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1], d_eta)
+            if method == TraceType.SINGLE:
+                phi = np.cumsum(d_phi) - d_phi[0]
+            else:
+                # Average d_phi between adjacent points
+                d_phi_avg = (d_phi + np.roll(d_phi, -1)) / 2
+                phi = np.cumsum(d_phi_avg) - d_phi_avg[0]
+
+            # Numerical correction to ensure final point is at the proper angle
+            # We can do this multiple times, whenever we know for sure that the phi is a multiple of pi * m / n
+
+            # RNC EDIT: Sign flip necessary to account for helicity direction
+            known_phis = np.linspace(
+                0, 2 * np.pi * self.m_local, (2 * self.n_local) + 1
+            ) * np.sign(phi[-1])
+            for i, known_phi_start in enumerate(known_phis[:-1]):
+                known_phi_end = known_phis[i + 1]
+                if np.sign(phi[-1]) == 1:
+                    phi_indices = np.squeeze(
+                        np.where((phi >= known_phi_start) & (phi <= known_phi_end))
+                    )
+                else:
+                    phi_indices = np.squeeze(
+                        np.where((phi <= known_phi_start) & (phi >= known_phi_end))
+                    )
+
+                actual_phi_start = phi[phi_indices[0]]
+                actual_phi_end = phi[phi_indices[-1]]
+                correction_factor = (known_phi_end - known_phi_start) / (
+                    actual_phi_end - actual_phi_start
+                )
+                phi[phi_indices] = (
+                    known_phi_start
+                    + (phi[phi_indices] - actual_phi_start) * correction_factor
+                )
+
+            filament_points = np.column_stack((R, phi, Z))
+        else:
+            raise ValueError("Unknown tracing method")
+
+        return filament_points, filament_etas
