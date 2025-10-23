@@ -12,7 +12,7 @@ dependencies = [
     "pre-commit>=4.3.0",
     "openfusiontoolkit",
     "freeqdsk>=0.5.2",
-    "xarray>=2025.10.1",
+    "xarray>=2025.1.0",
     "scipy>=1.16.2",
     "pyvista>=0.46.3",
     "matplotlib>=3.10.7",
