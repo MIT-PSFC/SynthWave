@@ -141,11 +141,11 @@ class ToroidalFilament(BaseFilament):
 
         # Create a circular filament around the magnetic axis
         phi = np.linspace(0, 2 * np.pi * self.m, num_filament_points)
-        R = self.R0 + self.a * np.cos(phi)
-        Z = self.Z0 + self.a * np.sin(phi)
+        filament_etas = np.linspace(0, 2 * np.pi, num_filament_points)
+        R = self.R0 + self.a * np.cos(filament_etas)
+        Z = self.Z0 + self.a * np.sin(filament_etas)
 
         filament_points = np.column_stack((R, phi, Z))
-        filament_etas = np.linspace(0, 2 * np.pi, num_filament_points)
 
         return filament_points, filament_etas
 
