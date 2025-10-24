@@ -16,16 +16,15 @@ plt.rcParams["lines.markeredgewidth"] = 2
 
 EXAMPLE_DIR = os.path.join(PACKAGE_ROOT, "..", "thincurr_scratch", "mesh_plot")
 
+MAJOR_RADIUS = 1
+MINOR_RADIUS = 0.3
 
-def create_torus_mesh():
+
+def create_torus_mesh(R0, a):
     # Create r_grid: [nphi, ntheta, 3] array defining the surface of one field period
-    nfp = 10
-    ntheta = 10
-    nphi = 10
-
-    # Define major and minor radii for the torus
-    R0 = 1.0  # Major radius
-    a = 0.3  # Minor radius
+    nfp = 1
+    ntheta = 40
+    nphi = 80
 
     # Create poloidal and toroidal angle grids
     theta = np.linspace(0, 2 * np.pi, ntheta, endpoint=False)
@@ -89,7 +88,7 @@ def plot_model_mesh(mesh_file, fig_file: str):
 
 def example_plotting_meshes():
     # Making your own torus mesh
-    torus_mesh = create_torus_mesh()
+    torus_mesh = create_torus_mesh(MAJOR_RADIUS, MINOR_RADIUS)
     torus_mesh_file = os.path.join(EXAMPLE_DIR, "thincurr_torus_mesh.h5")
     torus_mesh.write_to_file(torus_mesh_file)
     plot_model_mesh(
