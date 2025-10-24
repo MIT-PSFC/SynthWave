@@ -112,12 +112,12 @@ class FilamentTracer(ABC):
                 all_filament_points[:, :, 0],
                 all_filament_points[:, :, 1],
                 all_filament_points[:, :, 2],
-            )  # Shape (num_filaments, N, 3)
+            )  # Shape (3, num_filaments, N)
             ds = xr.Dataset(
                 data_vars={
-                    "x": (("filament", "point"), cartesian_points[:, :, 0]),
-                    "y": (("filament", "point"), cartesian_points[:, :, 1]),
-                    "z": (("filament", "point"), cartesian_points[:, :, 2]),
+                    "x": (("filament", "point"), cartesian_points[0, :, :]),
+                    "y": (("filament", "point"), cartesian_points[1, :, :]),
+                    "z": (("filament", "point"), cartesian_points[2, :, :]),
                     "current": (("filament"), filament_currents),
                 },
                 coords={
