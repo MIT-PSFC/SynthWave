@@ -55,3 +55,4 @@ Given the provided input files, the magnitude of the output signal across the se
 
 
 ![Basic sensor signal response output](https://github.com/MIT-PSFC/SynthWave/blob/main/synthwave/mirnov/input_data/Sensor_Signals_m04_n02_f1.0e%2B01kHz_CMod.svg)
+
