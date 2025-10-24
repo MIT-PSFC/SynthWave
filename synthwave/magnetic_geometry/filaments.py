@@ -82,9 +82,7 @@ class FilamentTracer(ABC):
         # Create toroidal offsets and corresponding currents
         ratio = Fraction(self.m, self.n)
         n_local = ratio.denominator
-        starting_angles = np.linspace(
-            0, 2 * np.pi / n_local, num_filaments, endpoint=False
-        )
+        starting_angles = np.linspace(0, 2 * np.pi, num_filaments, endpoint=False)
 
         all_filament_points = np.repeat(
             base_filament_points[np.newaxis, :, :], num_filaments, axis=0
