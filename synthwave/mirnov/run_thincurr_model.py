@@ -324,21 +324,21 @@ def plot_sensor_output(
 
     # Plot
     plt.close('Sensor_Signals_m%02d_n%02d_f%1.1ekHz'%( mode["m"],mode["n"],freq/1e3))
-    fig,ax = plt.subplots(1,1,figsize=(6,5),tight_layout=True,num='Sensor_Signals_m%02d_n%02d_f%1.1ekHz'%(
+    fig,ax = plt.subplots(1,1,figsize=(4,3),tight_layout=True,num='Sensor_Signals_m%02d_n%02d_f%1.1ekHz'%(
         mode["m"],mode["n"],freq/1e3))
-    sc = ax.plot(sensor_names, mags, '-*',label='Sensor Signals Magnitude')
+    sc = ax.plot(sensor_names, mags, '-*',label=r'$m/n=%d/%d,\,f=%1.1f$ kHz'%(mode["m"],mode["n"],freq/1e3))
     
-    ax.set_xticks(range(0, len(sensor_names), 2))
-    ax.set_xticklabels([sensor_names[i] for i in range(0, len(sensor_names), 2)])
+    ax.set_xticks(range(0, len(sensor_names), 3))
+    ax.set_xticklabels([sensor_names[i] for i in range(0, len(sensor_names), 3)])
     ax.tick_params(axis='x', rotation=90)
-    # ax.legend(fontsize=8,handlelength=1)
+    ax.legend(fontsize=8,handlelength=1)
     ax.set_ylabel('Signal Magnitude [T/s]')
 
     ax.grid()
 
     if doSave:
         fig.savefig(working_files_directory + 
-            "Sensor_Signals_m%02d_n%02d_f%1.1ekHz%s.pdf" % 
+            "Sensor_Signals_m%02d_n%02d_f%1.1ekHz%s.svg" % 
             (
                 mode["m"],
                 mode["n"],
