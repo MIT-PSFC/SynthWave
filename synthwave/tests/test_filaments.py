@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 
-from synthwave.magnetic_geometry.filaments import ToroidalFilament, EquilibriumFilament, TraceType
+from synthwave.magnetic_geometry.filaments import ToroidalFilamentTracer, EquilibriumFilamentTracer
 
 class TestToroidalFilament:
     """Test the CylindricalFilament class."""
@@ -11,23 +11,23 @@ class TestToroidalFilament:
         m, n = 2, 1
         R0, Z0, a = 1.8, 0.0, 0.5
         num_points = 100
-        
-        filament = ToroidalFilament(m, n, R0, Z0, a, num_points)
-        
-        assert filament.m == m
-        assert filament.n == n
-        assert filament.R0 == R0
-        assert filament.Z0 == Z0
-        assert filament.a == a
-        assert filament.num_points == num_points
-    
+
+        tracer = ToroidalFilamentTracer(m, n, R0, Z0, a, num_points)
+
+        assert tracer.m == m
+        assert tracer.n == n
+        assert tracer.R0 == R0
+        assert tracer.Z0 == Z0
+        assert tracer.a == a
+        assert tracer.num_points == num_points
+
     def test_trace_basic(self):
         """Test basic tracing functionality."""
         m, n = 2, 1
         R0, Z0, a = 1.8, 0.0, 0.5
         num_points = 100
 
-        filament = ToroidalFilament(m, n, R0, Z0, a, num_points)
+        filament = ToroidalFilamentTracer(m, n, R0, Z0, a, num_points)
         points, etas = filament.trace()
         
         # Check shape
@@ -42,8 +42,8 @@ class TestToroidalFilament:
         m, n = 1, 1
         num_points = 100
 
-        filament = ToroidalFilament(m, n, R0, Z0, a, num_points)
-        points, etas = filament.trace()
+        tracer = ToroidalFilamentTracer(m, n, R0, Z0, a, num_points)
+        points, etas = tracer.trace()
 
         R, phi, Z = points[:, 0], points[:, 1], points[:, 2]
         
@@ -67,8 +67,8 @@ class TestToroidalFilament:
         # Test different mode numbers
         for m in [1, 2, 3]:
             n = 1
-            filament = ToroidalFilament(m, n, R0, Z0, a, num_points)
-            points, etas = filament.trace()
+            tracer = ToroidalFilamentTracer(m, n, R0, Z0, a, num_points)
+            points, etas = tracer.trace()
 
             phi = points[:, 1]
             phi_range = phi[-1] - phi[0]
@@ -83,8 +83,8 @@ class TestToroidalFilament:
         R0, Z0, a = 1.8, 0.0, 0.5
         num_points = 9  # Use 9 points for easy checking. This gives points at 0, π/4, π/2, ..., 2π
         
-        filament = ToroidalFilament(m, n, R0, Z0, a, num_points)
-        points, etas = filament.trace()
+        tracer = ToroidalFilamentTracer(m, n, R0, Z0, a, num_points)
+        points, etas = tracer.trace()
 
         R, phi, Z = points[:, 0], points[:, 1], points[:, 2]
         
@@ -112,15 +112,15 @@ class TestToroidalFilament:
         """Test tracing with different number of points."""
         m, n = 1, 1
         R0, Z0, a = 2.0, 0.0, 0.5
-        
-        filament = ToroidalFilament(m, n, R0, Z0, a, num_points=100)
-        
+
+        tracer = ToroidalFilamentTracer(m, n, R0, Z0, a, num_points=100)
+
         # Test with default number of points
-        points_default, _ = filament.trace()
+        points_default, _ = tracer.trace()
         assert points_default.shape[0] == 100
         
         # Test with custom number of points
-        points_custom, _ = filament.trace(num_filament_points=200)
+        points_custom, _ = tracer.trace(num_filament_points=200)
         assert points_custom.shape[0] == 200
         
         # Both should have same geometry, just different resolution
@@ -140,8 +140,8 @@ class TestToroidalFilament:
         R0, Z0, a = 1.7, 0.1, 0.4
         num_points = 100
 
-        filament = ToroidalFilament(m, n, R0, Z0, a, num_points)
-        points, etas = filament.trace()
+        tracer = ToroidalFilamentTracer(m, n, R0, Z0, a, num_points)
+        points, etas = tracer.trace()
 
         R, phi, Z = points[:, 0], points[:, 1], points[:, 2]
         

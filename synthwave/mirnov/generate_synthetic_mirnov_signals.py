@@ -21,14 +21,10 @@ from typing import Optional
 from freeqdsk import geqdsk
 from synthwave import PACKAGE_ROOT
 
-from synthwave.magnetic_geometry.filaments import BaseFilament
+from synthwave.magnetic_geometry.filaments import FilamentTracer
 
 from synthwave.mirnov.prep_thincurr_input import (
-    gen_coil_currs_sin_cos,
-    gen_filament_coords,
-    calc_filament_coords_field_lines,
     gen_OFT_sensors_file,
-    gen_OFT_filement_and_eta_file,
 )
 
 from synthwave.mirnov.run_thincurr_model import (
@@ -41,7 +37,7 @@ from synthwave.mirnov.run_thincurr_model import (
 
 def synthetic_mirnov_signal(
     probe_details: xr.Dataset,
-    filament: BaseFilament,
+    tracer: FilamentTracer,
     freq: float,
     working_directory: str,
     mesh_file: Optional[str] = None,
@@ -120,15 +116,6 @@ def thincurr_synthetic_mirnov_signal(
     # Prepare filament currents, locations
 
     # Generate coil currents (for artificial mode)
-    coil_currs = gen_coil_currs_sin_cos(mode)
-
-    # Get starting coorindates for filaments
-    theta, phi = gen_filament_coords(mode)
-
-    filament_coords = calc_filament_coords_field_lines(mode, eqdsk, debug=debug)
-
-    # Put filaments in OFT file format
-    gen_OFT_filement_and_eta_file(working_directory, filament_coords, eta)
 
     ######################################################################################
     # Generate sensors in OFT format
@@ -142,6 +129,7 @@ def thincurr_synthetic_mirnov_signal(
 
     ######################################################################################
     # Calculate frequency response
+    coil_currs = None
     sensors_bode = run_frequency_scan(
         tw_mesh,
         freq,
@@ -169,6 +157,7 @@ def thincurr_synthetic_mirnov_signal(
     ######################################################################################
     # Optional debug output
     # Plot mesh, filaments, sensors, and currents
+    filament_coords = None
     makePlots(
         tw_mesh,
         mode,

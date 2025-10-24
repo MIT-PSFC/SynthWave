@@ -1,12 +1,8 @@
 import os
-
-
 from synthwave import PACKAGE_ROOT
 from synthwave.scratch.mesh_plot import create_torus_mesh
-from synthwave.magnetic_geometry.filaments import ToroidalFilament
-from synthwave.magnetic_geometry.utils import (
-    cylindrical_to_cartesian,
-)
+from synthwave.magnetic_geometry.filaments import ToroidalFilamentTracer
+from synthwave.mirnov.prep_thincurr_input import gen_OFT_filament_and_eta_file
 
 EXAMPLE_DIR = os.path.join(PACKAGE_ROOT, "..", "thincurr_scratch", "freq_response")
 
@@ -26,6 +22,12 @@ if __name__ == "__main__":
         torus_mesh.write_to_file(torus_mesh_file)
 
     # Create 'oft_in.xml' file with icoil definitions
-    filament = ToroidalFilament(2, 1, MAJOR_RADIUS, 0, MINOR_RADIUS)
-    filament_points_cylindrical, filament_etas = filament.trace(50)
-    filament_points_cartesian = cylindrical_to_cartesian(filament_points_cylindrical)
+    toroidal_tracer = ToroidalFilamentTracer(2, 1, MAJOR_RADIUS, 0, MINOR_RADIUS)
+    filament_list = toroidal_tracer.get_filament_list(num_filaments=10)
+
+    oft_filament_file = os.path.join(EXAMPLE_DIR, "oft_in.xml")
+    gen_OFT_filament_and_eta_file(
+        working_directory=EXAMPLE_DIR,
+        filament_list=filament_list,
+        resistivity_list=[1e-6],
+    )
