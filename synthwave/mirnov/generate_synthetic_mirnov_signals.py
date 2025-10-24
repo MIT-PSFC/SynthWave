@@ -10,8 +10,6 @@ and a frequency to simulate
 Outputs a netcdf file with the real and imaginary components of the probe signals in [T/s]
 and optional plots of the mesh, filaments, and sensors
 
-Beta version
-
 Original by Rian Chandra,
 Modified by Zander Keith
 """
@@ -22,6 +20,8 @@ import xarray as xr
 from freeqdsk import geqdsk
 from synthwave import PACKAGE_ROOT
 
+from synthwave.magnetic_geometry.filaments import BaseFilament
+
 from synthwave.mirnov.prep_thincurr_input import (
     gen_coil_currs_sin_cos,
     gen_filament_coords,
@@ -30,13 +30,42 @@ from synthwave.mirnov.prep_thincurr_input import (
     gen_OFT_filement_and_eta_file,
 )
 
-
 from synthwave.mirnov.run_thincurr_model import (
     get_mesh,
     run_frequency_scan,
     makePlots,
     correct_frequency_response,
 )
+
+
+def synthetic_mirnov_signal(
+    probe_details: xr.Dataset,
+    mesh_file: str,
+    filament: BaseFilament,
+    freq: float,
+    working_directory: str,
+    vessel_resistivity: float = 1e-6,
+    debug: bool = False,
+) -> xr.Dataset:
+    """
+    Calculate the real and imaginary components of the magnetic probe signals using ThinCurr.
+    Assumes that a valid conducting structure mesh is provided.
+
+    Args:
+        probe_details: Dataset containing probe geometry in X,Y,Z coordinate, orientation in theta, phi,
+        mesh_model: Path to the vessel model file for ThinCurr
+        filament (BaseFilament): Filament object defining the mode to simulate
+        freq: Frequency of the mode to simulate
+        working_directory: Directory to store and load mesh and temporary files from
+        vessel_resistivity (Optional[float], default=1e-6): Resistivity of the conducting structure in Ohm-m
+        debug (Optional[bool], default=False): If True, print debug information
+
+    Returns:
+        xr.Dataset: Dataset containing the simulated probe signals in [T/s].
+    """
+
+    # Prepare filament currents and put them in OFT format
+    # https://openfusiontoolkit.github.io/OpenFUSIONToolkit/docs/v1.0.0-beta6/doc_tw_main.html#doc_tw_main_filament
 
 
 ################################################################################################
@@ -48,7 +77,7 @@ def thincurr_synthetic_mirnov_signal(
     freq: float,
     mode: dict,
     eta: list[float],
-    working_files_directory: str,
+    working_directory: str,
     save_Ext: str = "",
     debug: bool = False,
     n_threads: int = 0,
@@ -75,7 +104,7 @@ def thincurr_synthetic_mirnov_signal(
         doPlot: If True, generate debug plots of the mesh, filaments, and sensors
         doSave: If True, save the output dataset to a netcdf file
         plotParams: Dictionary with plotting parameters, e.g. {'clim_J': [0, 0.5]} for color limits of eddy current plot
-        working_files_directory: Directory to store and load mesh and temporary files from
+        working_directory: Directory to store and load mesh and temporary files from
     Returns:
         xr.Dataset: Dataset containing the simulated probe signals in [T/s].
     """
@@ -86,24 +115,22 @@ def thincurr_synthetic_mirnov_signal(
     # Generate coil currents (for artificial mode)
     coil_currs = gen_coil_currs_sin_cos(mode)
 
-    # Get starting coorindates for fillaments
+    # Get starting coorindates for filaments
     theta, phi = gen_filament_coords(mode)
 
-    filament_coords = calc_filament_coords_field_lines(
-        mode, eqdsk, working_files_directory, doDebug=debug
-    )
+    filament_coords = calc_filament_coords_field_lines(mode, eqdsk, debug=debug)
 
-    # Put filamanets in OFT file format
-    gen_OFT_filement_and_eta_file(working_files_directory, filament_coords, eta)
+    # Put filaments in OFT file format
+    gen_OFT_filement_and_eta_file(working_directory, filament_coords, eta)
 
     ######################################################################################
     # Generate sensors in OFT format
-    sensors = gen_OFT_sensors_file(probe_details, working_files_directory, debug=debug)
+    sensors = gen_OFT_sensors_file(probe_details, working_directory, debug=debug)
 
     ######################################################################################
     # Prepare ThinCurr Model, Get finite element Mesh
     tw_mesh, sensor_obj, Mc = get_mesh(
-        mesh_model_file, working_files_directory, n_threads, sensor_set, debug=debug
+        mesh_model_file, working_directory, n_threads, sensor_set, debug=debug
     )
 
     ######################################################################################
@@ -116,7 +143,7 @@ def thincurr_synthetic_mirnov_signal(
         mesh_model_file,
         sensor_obj,
         mode,
-        working_files_directory,
+        working_directory,
     )
 
     # Correct for sensor frequency response and save results
@@ -127,7 +154,7 @@ def thincurr_synthetic_mirnov_signal(
         mode,
         doSave,
         debug,
-        working_files_directory,
+        working_directory,
         probe_details,
         save_Ext,
     )
@@ -147,7 +174,7 @@ def thincurr_synthetic_mirnov_signal(
         debug=debug,
         plotParams=plotParams,
         doPlot=doPlot,
-        working_files_directory=working_files_directory,
+        working_directory=working_directory,
     )
 
     ######################################################################################
@@ -164,8 +191,8 @@ if __name__ == "__main__":
     # Load example probe details
     probe_details_file = os.path.join(
         PACKAGE_ROOT,
-        "synthetic_mirnov",
         "input_data",
+        "cmod",
         f"sensor_details_{sensor_set}.nc",
     )
     probe_details = xr.load_dataset(probe_details_file)
@@ -220,7 +247,7 @@ if __name__ == "__main__":
 
     ###################
     debug = True
-    working_files_directory = "input_data/"
+    working_directory = "input_data/"
     save_Ext = "_CMod"
     n_threads = 12
     doSave = True
@@ -235,7 +262,7 @@ if __name__ == "__main__":
         freq,
         mode,
         eta,
-        working_files_directory=working_files_directory,
+        working_directory=working_directory,
         save_Ext=save_Ext,
         debug=debug,
         n_threads=n_threads,

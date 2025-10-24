@@ -4,10 +4,9 @@
 import numpy as np
 from fractions import Fraction
 
-from tars.filaments import EquilibriumFilament, TraceType
-from tars.magnetic_field import EquilibriumField
+from synthwave.magnetic_geometry.filaments import EquilibriumFilament, TraceType
+from synthwave.magnetic_geometry.equilibrium_field import EquilibriumField
 
-from freeqdsk import geqdsk
 import matplotlib.pyplot as plt
 from OpenFUSIONToolkit.ThinCurr.sensor import Mirnov, save_sensors
 
@@ -15,7 +14,7 @@ from OpenFUSIONToolkit.ThinCurr.sensor import Mirnov, save_sensors
 ################################################################################################
 ################################################################################################
 def gen_coil_currs_sin_cos(mode, debug=True, doSave=False):
-    # Assign currents to existing fillaments for time dependent calculation
+    # Assign currents to existing filaments for time dependent calculation
     # The ordering of the filaments and currents must match for the field topology to be correct
 
     m_pts = mode["m_pts"]
@@ -58,11 +57,13 @@ def gen_coil_currs_sin_cos(mode, debug=True, doSave=False):
 
 #########################################################################################################
 def gen_filament_coords(params):
+    # TODO(ZanderKeith): Ask Rian why you need to distribute along both poloidal and toroidal angles
+    # Solely toroidal should be enough, yes?
     m = params["m"]
     n = params["n"]
     n_pts = params["n_pts"]
     m_pts = params["m_pts"]
-    # generate theta,phi coordinates for fillaments
+    # generate theta,phi coordinates for filaments
     # The points launch in a fractional sector of the toroidal plane
     # and wrap enough times to return to their starting point
     # Ported from geqdsk_filament_generator.py
@@ -100,9 +101,7 @@ def starting_phi(m, n, m_pts, n_pts):
 
 ###############################################################
 # Core of new Winding Method
-def wind_in_theta(working_directory, file_geqdsk, m, n, debug=False):
-    with open(working_directory + file_geqdsk, "r") as f:
-        eqdsk = geqdsk.read(f)
+def wind_in_theta(eqdsk, m, n, debug=False):
     eq_field = EquilibriumField(eqdsk)
     eq_filament = EquilibriumFilament(m, n, eq_field)
     filament_points, filament_etas = eq_filament._trace(
@@ -140,9 +139,7 @@ def conv_theta_wind_to_coords(filament_points, phi_start):
     return np.array(coords)
 
 
-def calc_filament_coords_field_lines(
-    mode, file_geqdsk, working_directory, doDebug=False
-):
+def calc_filament_coords_field_lines(mode, geqdsk, debug=False):
     # Calling container for field-tracing filaments
     # Ported from geqdsk_filament_generator.py
 
@@ -150,13 +147,13 @@ def calc_filament_coords_field_lines(
     n = mode["n"]
     n_pts = mode["n_pts"]
     m_pts = mode["m_pts"]
-    # generate theta,phi coordinates for fillaments
+    # generate theta,phi coordinates for filaments
     # The points launch in a fractional sector of the poloidal plane, and
     # wrap toroidally enough times to return to their starting point
 
     phi_start, phi_advance = starting_phi(m, n, m_pts, n_pts)
 
-    filament_points, filament_etas = wind_in_theta(working_directory, file_geqdsk, m, n)
+    filament_points, filament_etas = wind_in_theta(geqdsk, m, n, debug=debug)
 
     coords = conv_theta_wind_to_coords(filament_points, phi_start)
 
@@ -204,7 +201,7 @@ def gen_OFT_filement_and_eta_file(filament_file, filament_coords, eta, debug=Fal
 
 ################################################################
 #######3#########################################################
-def gen_OFT_sensors_file(probe_details, working_files_directory, debug=True):
+def gen_OFT_sensors_file(probe_details, working_directory, debug=True):
     # Assume probe_details is an xarray dataset with the following variables:
     # X, Y, Z (coordinates of each probe)
     # theta, phi (orientation of each probe)
@@ -222,11 +219,11 @@ def gen_OFT_sensors_file(probe_details, working_files_directory, debug=True):
     # Save in ThinCurr format
     save_sensors(
         sensor_list,
-        f"{working_files_directory}/floops_{probe_details.attrs['probe_set_name']}.loc",
+        f"{working_directory}/floops_{probe_details.attrs['probe_set_name']}.loc",
     )
     if debug:
         print(
             "Wrote OFT sensor file to %s/floops_%s.loc"
-            % (working_files_directory, probe_details.attrs["probe_set_name"])
+            % (working_directory, probe_details.attrs["probe_set_name"])
         )
     return sensor_list

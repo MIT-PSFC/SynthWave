@@ -35,7 +35,15 @@ class BaseFilament(ABC):
     def _trace(
         self, num_filament_points: Optional[int] = None
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Trace the filament and return the points in cylindrical coordinates (R, phi, Z)"""
+        """Trace the filament and return the points in cylindrical coordinates (R, phi, Z) as well as the corresponding eta values.
+
+        Args:
+            num_filament_points (Optional[int]): Number of points to trace along the filament. If None, uses self.num_points.
+        Returns:
+            tuple[np.ndarray, np.ndarray]: Tuple containing:
+                - filament_points: Array of shape (N, 3) where each row is [R, phi, Z] in cylindrical coordinates.
+                - filament_etas: Array of shape (N,) containing the eta values corresponding to each point.
+        """
 
     def trace(
         self, num_filament_points: Optional[int] = None

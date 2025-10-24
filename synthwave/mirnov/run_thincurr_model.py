@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 ################################################################################################
 ################################################################################################
-def get_mesh(mesh_file, working_files_directory, n_threads, sensor_set, debug=True):
+def get_mesh(mesh_file, working_directory, n_threads, sensor_set, debug=True):
     # Load mesh, compute inductance matrices
 
     if debug:
@@ -20,8 +20,8 @@ def get_mesh(mesh_file, working_files_directory, n_threads, sensor_set, debug=Tr
     oft_env = OFT_env(nthreads=os.cpu_count() if n_threads == 0 else n_threads)
     tw_mesh = ThinCurr(oft_env)
     tw_mesh.setup_model(
-        mesh_file=working_files_directory + mesh_file,
-        xml_filename=working_files_directory + "oft_in.xml",
+        mesh_file=working_directory + mesh_file,
+        xml_filename=working_directory + "oft_in.xml",
     )
     tw_mesh.setup_io()
 
@@ -63,7 +63,7 @@ def run_frequency_scan(
     mesh_file,
     sensor_obj,
     mode,
-    working_files_directory,
+    working_directory,
     coil_current_magnitude=1,
 ):
     Mcoil = tw_mesh.compute_Mcoil()
@@ -72,8 +72,7 @@ def run_frequency_scan(
 
     # Mutual between the mesh and sensors, and coil and sensors
     Msensor, Msc, _ = tw_mesh.compute_Msensor(
-        working_files_directory
-        + "floops_%s.loc" % probe_details.attrs["probe_set_name"]
+        working_directory + "floops_%s.loc" % probe_details.attrs["probe_set_name"]
     )
 
     # Test one frequency
@@ -135,7 +134,7 @@ def makePlots(
     debug=True,
     plotParams={"clim_J": [0, 1]},
     doPlot=True,
-    working_files_directory="",
+    working_directory="",
 ):
     # Generate plots of mesh, filaments, sensors, and currents
     # Will plot induced current on the mesh if plot_B_surf is True
@@ -211,7 +210,7 @@ def makePlots(
 
         tmp.append(pts)
     if debug:
-        print("Plotted Fillaments")
+        print("Plotted filaments")
 
     ###################################################
     # Plot Sensors
@@ -227,7 +226,7 @@ def makePlots(
     if debug:
         print("Plotted Sensors")
     if doSave:
-        p.save_graphic(working_files_directory + "Mesh_and_Filaments%s.pdf" % save_Ext)
+        p.save_graphic(working_directory + "Mesh_and_Filaments%s.pdf" % save_Ext)
     if debug:
         print("Saved figure")
     p.show()
@@ -247,7 +246,7 @@ def correct_frequency_response(
     mode,
     doSave,
     debug,
-    working_files_directory,
+    working_directory,
     probe_details,
     save_Ext,
 ):
@@ -264,7 +263,7 @@ def correct_frequency_response(
 
     if doSave:
         sensors_bode.to_netcdf(
-            working_files_directory
+            working_directory
             + "probe_signals_%s_m%02d_n%02d_f%1.1ekHz%s.nc"
             % (
                 probe_details.attrs["probe_set_name"],
@@ -279,7 +278,7 @@ def correct_frequency_response(
             print(
                 "Saved probe signals to %s"
                 % (
-                    working_files_directory
+                    working_directory
                     + "probe_signals_%s_m%02d_n%02d_f%1.1ekHz%s.nc"
                     % (
                         probe_details.attrs["probe_set_name"],
