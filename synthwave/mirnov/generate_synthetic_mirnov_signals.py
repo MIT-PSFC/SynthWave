@@ -17,6 +17,7 @@ Modified by Zander Keith
 import os
 import numpy as np
 import xarray as xr
+from typing import Optional
 from freeqdsk import geqdsk
 from synthwave import PACKAGE_ROOT
 
@@ -40,23 +41,23 @@ from synthwave.mirnov.run_thincurr_model import (
 
 def synthetic_mirnov_signal(
     probe_details: xr.Dataset,
-    mesh_file: str,
     filament: BaseFilament,
     freq: float,
     working_directory: str,
-    vessel_resistivity: float = 1e-6,
-    debug: bool = False,
+    mesh_file: Optional[str] = None,
+    vessel_resistivity: Optional[float] = 1e-6,
+    debug: Optional[bool] = False,
 ) -> xr.Dataset:
     """
     Calculate the real and imaginary components of the magnetic probe signals using ThinCurr.
-    Assumes that a valid conducting structure mesh is provided.
+    If a mesh_file is not provided, does not include the conducting structure effects.
 
     Args:
-        probe_details: Dataset containing probe geometry in X,Y,Z coordinate, orientation in theta, phi,
-        mesh_model: Path to the vessel model file for ThinCurr
+        probe_details (xr.Dataset): Dataset containing probe geometry in X,Y,Z coordinate, orientation in theta, phi,
         filament (BaseFilament): Filament object defining the mode to simulate
-        freq: Frequency of the mode to simulate
-        working_directory: Directory to store and load mesh and temporary files from
+        freq (float): Frequency of the mode to simulate
+        working_directory (str): Directory to write and load ThinCurr files
+        mesh_file (Optional[str]): Path to the vessel model file for ThinCurr
         vessel_resistivity (Optional[float], default=1e-6): Resistivity of the conducting structure in Ohm-m
         debug (Optional[bool], default=False): If True, print debug information
 
@@ -66,6 +67,12 @@ def synthetic_mirnov_signal(
 
     # Prepare filament currents and put them in OFT format
     # https://openfusiontoolkit.github.io/OpenFUSIONToolkit/docs/v1.0.0-beta6/doc_tw_main.html#doc_tw_main_filament
+
+    # Prepare sensors in OFT format
+
+    # Prepare ThinCurr Model, get finite element Mesh
+
+    # Calculate frequency response
 
 
 ################################################################################################

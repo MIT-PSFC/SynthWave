@@ -165,6 +165,7 @@ def calc_filament_coords_field_lines(mode, geqdsk, debug=False):
 # Generate OFT Input Files
 ################################################################################################
 def gen_OFT_filement_and_eta_file(filament_file, filament_coords, eta, debug=False):
+    """ """
     # Write filament (x,y,z) coordinates to xml file in OFT format
     # Each filament is a list of points, each point is a list of [x,y,z] points
     # Removing options for multiple m,n modes for now

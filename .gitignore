@@ -211,3 +211,6 @@ __marimo__/
 
 # Symlink
 submodules/OpenFUSIONToolkit
+
+# scratch
+thincurr_scratch/
