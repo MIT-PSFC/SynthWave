@@ -290,3 +290,58 @@ def correct_frequency_response(
                     )
                 )
             )
+
+################################################################################################
+################################################################################################
+def plot_sensor_output(
+        working_files_directory,
+        probe_details,
+        mode,
+        freq,
+        save_Ext,
+        doSave,
+):
+
+    # Load in saved sensor signals from netCDF format and plot
+
+    fName = working_files_directory + \
+        "probe_signals_%s_m%02d_n%02d_f%1.1ekHz%s.nc" % \
+        (
+            probe_details.attrs["probe_set_name"], 
+            mode["m"],
+            mode["n"],
+            freq / 1e3,
+            save_Ext,
+        )
+
+    # Load data
+    sensors_bode = xr.load_dataset(fName)
+
+    # Generate signal magnitudes
+    mags = [ np.linalg.norm(sensors_bode.sel(sensor=sig).signal.values.tolist()) \
+            for sig in sensors_bode.sensor.values]
+    sensor_names = sensors_bode.sensor.values.tolist()
+
+    # Plot
+    plt.close('Sensor_Signals_m%02d_n%02d_f%1.1ekHz'%( mode["m"],mode["n"],freq/1e3))
+    fig,ax = plt.subplots(1,1,figsize=(6,5),tight_layout=True,num='Sensor_Signals_m%02d_n%02d_f%1.1ekHz'%(
+        mode["m"],mode["n"],freq/1e3))
+    sc = ax.plot(sensor_names, mags, '-*',label='Sensor Signals Magnitude')
+    
+    ax.set_xticks(range(0, len(sensor_names), 2))
+    ax.set_xticklabels([sensor_names[i] for i in range(0, len(sensor_names), 2)])
+    ax.tick_params(axis='x', rotation=90)
+    # ax.legend(fontsize=8,handlelength=1)
+    ax.set_ylabel('Signal Magnitude [T/s]')
+
+    ax.grid()
+
+    if doSave:
+        fig.savefig(working_files_directory + 
+            "Sensor_Signals_m%02d_n%02d_f%1.1ekHz%s.pdf" % 
+            (
+                mode["m"],
+                mode["n"],
+                freq / 1e3,
+                save_Ext,
+            ), transparent=True)
