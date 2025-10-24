@@ -53,4 +53,5 @@ to the ``plasma'' filaments, as well as coupling to the induced eddy current res
 
 Given the provided input files, the magnitude of the output signal across the sensor set should look like the below:
 
+
 ![Basic sensor signal response output](https://github.com/MIT-PSFC/SynthWave/blob/main/synthwave/mirnov/input_data/Sensor_Signals_m04_n02_f1.0e%2B01kHz_CMod.svg)
