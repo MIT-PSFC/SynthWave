@@ -3,6 +3,7 @@
 
 import os
 import numpy as np
+import xarray as xr
 
 from typing import Optional
 
@@ -58,7 +59,17 @@ def gen_OFT_filament_and_eta_file(
         print("Wrote OFT filament file to %s" % filament_file)
 
 
-def gen_OFT_sensors_file(probe_details, working_directory, debug=True):
+def gen_OFT_sensors_file(
+    probe_details: xr.Dataset, working_directory: str, debug: bool = True
+):
+    """
+    Write probe details to OFT format file for ThinCurr
+
+    Args:
+        probe_details (xr.Dataset): Dataset containing probe location and normal orientation in x,y,z
+        working_directory (str): Directory to save the OFT sensor file
+        debug (Optional[bool], default=True): If True, print debug information
+    """
     # Assume probe_details is an xarray dataset with the following variables:
     # X, Y, Z (coordinates of each probe)
     # theta, phi (orientation of each probe)

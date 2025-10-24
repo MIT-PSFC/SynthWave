@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 from OpenFUSIONToolkit import OFT_env
 from OpenFUSIONToolkit.ThinCurr import ThinCurr
 import numpy as np
@@ -8,6 +5,72 @@ import xarray as xr
 import pyvista
 import os
 import matplotlib.pyplot as plt
+from synthwave.magnetic_geometry.filaments import FilamentTracer
+from typing import Optional
+
+
+def calc_frequency_response(
+    probe_details: xr.Dataset,
+    tracer: FilamentTracer,
+    freq: float,
+    mesh_file: str,
+    working_directory: str,
+    n_threads: Optional[int] = None,
+):
+    """
+    Calculate the measured frequency response at the given probes due to filaments defined by the tracer.
+    Assumes that the OFT input files have already been generated in the working_directory.
+
+    """
+
+    # Create thin wall model
+    oft_env = OFT_env(nthreads=os.cpu_count() if n_threads is None else n_threads)
+    tw_model = ThinCurr(oft_env)
+    tw_model.setup_model(
+        mesh_file=mesh_file,
+        xml_filename=os.path.join(working_directory, "oft_in.xml"),
+    )
+    tw_model.setup_io(working_directory)
+
+    # Calculate mutual inductances
+
+    # finite element mesh -> sensor, coil -> sensor
+    probe_set_file = os.path.join(
+        working_directory, f"floops_{probe_details.attrs['probe_set_name']}.loc"
+    )
+    Msensor, Msc, sensor_obj = tw_model.compute_Msensor(probe_set_file)
+
+    # filament -> finite element mesh
+    Mc = tw_model.compute_Mcoil()
+
+    # Build inductance matrix because apparently that's required
+    tw_model.compute_Lmat(
+        use_hodlr=True,
+        cache_file=os.path.join(
+            working_directory,
+            f"HOLDR_L_{os.path.basename(mesh_file)}_{probe_details.attrs['probe_set_name']}.save",
+        ),
+    )
+    tw_model.compute_Rmat()
+
+    # Build driver from filaments
+    filament_details = tracer.make_points_and_currents(
+        num_filaments=Mc.shape[0], coordinate_system="cartesian"
+    )
+    filament_currents = filament_details.current.values
+
+    driver = np.zeros((2, tw_model.nelems))
+    # Why did Rian have driver[:, :]?
+    driver[0, :] = np.dot(filament_currents, Mc)
+
+    # Calculate mesh response at given frequency
+    mesh_response = tw_model.compute_freq_response(fdriver=driver, freq=freq)
+
+    # Contribution from mesh current to the sensor
+    probe_signals = np.dot(mesh_response, Msensor)
+
+    # Contribution from coil current directly to the sensor
+    return probe_signals
 
 
 ################################################################################################
