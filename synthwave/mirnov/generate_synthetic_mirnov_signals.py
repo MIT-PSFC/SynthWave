@@ -7,7 +7,7 @@ and a mode to simulate (m,n)
 and a resistivity for the conducting structure
 and a frequency to simulate
 
-Outputs a netcdf file with the real and imaginary components of the probe signals in [T/s]
+Outputs a netcdf file with the real and imaginary components of the probe signals in [T]
 and optional plots of the mesh, filaments, and sensors
 
 Original by Rian Chandra,

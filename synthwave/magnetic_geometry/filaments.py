@@ -90,7 +90,8 @@ class FilamentTracer(ABC):
         all_filament_points[:, :, 1] += starting_angles[
             :, np.newaxis
         ]  # Apply toroidal offsets
-        filament_currents = np.cos(starting_angles * n_local)
+        # Complex currents for rotating wave: I(phi) = I_0 * exp(i*n*phi)
+        filament_currents = np.exp(1j * starting_angles * n_local)
 
         if coordinate_system == "cylindrical":
             ds = xr.Dataset(

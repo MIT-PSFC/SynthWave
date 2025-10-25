@@ -16,10 +16,15 @@ def calc_frequency_response(
     mesh_file: str,
     working_directory: str,
     n_threads: Optional[int] = None,
-):
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Calculate the measured frequency response at the given probes due to filaments defined by the tracer.
     Assumes that the OFT input files have already been generated in the working_directory.
+
+    Returns:
+        total_response (np.ndarray): Complex array of total probe signals [T]
+        vessel_response (np.ndarray): Complex array of probe signals due to vessel currents [T]
+        direct_response (np.ndarray): Complex array of probe signals due to direct filament coupling [T]
 
     """
 
@@ -57,20 +62,29 @@ def calc_frequency_response(
     filament_details = tracer.make_points_and_currents(
         num_filaments=Mc.shape[0], coordinate_system="cartesian"
     )
-    filament_currents = filament_details.current.values
+    filament_currents = (
+        filament_details.current.values
+    )  # Complex array for rotating wave
 
     driver = np.zeros((2, tw_model.nelems))
-    # Why did Rian have driver[:, :]?
-    driver[0, :] = np.dot(filament_currents, Mc)
+    # Driver represents the complex phasor: real and imaginary parts
+    driver[0, :] = np.dot(filament_currents.real, Mc)
+    driver[1, :] = np.dot(filament_currents.imag, Mc)
 
     # Calculate mesh response at given frequency
     mesh_response = tw_model.compute_freq_response(fdriver=driver, freq=freq)
 
     # Contribution from mesh current to the sensor
-    probe_signals = np.dot(mesh_response, Msensor)
+    vessel_response_matrix = np.dot(mesh_response, Msensor)
+    vessel_response = vessel_response_matrix[0, :] + 1j * vessel_response_matrix[1, :]
 
-    # Contribution from coil current directly to the sensor
-    return probe_signals
+    # Contribution from filament current directly to the sensor
+    # This is the mutual inductance flux: Phi = M * I (both are complex)
+    direct_response = np.dot(filament_currents, Msc)
+
+    total_response = vessel_response + direct_response
+
+    return total_response, vessel_response, direct_response
 
 
 ################################################################################################
