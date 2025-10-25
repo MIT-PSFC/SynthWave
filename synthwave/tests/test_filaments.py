@@ -1,9 +1,14 @@
 import pytest
 import numpy as np
+import os
 import tempfile
+
+from synthwave import PACKAGE_ROOT
 
 from synthwave.magnetic_geometry.filaments import ToroidalFilamentTracer, EquilibriumFilamentTracer
 import matplotlib.pyplot as plt
+
+FIG_DIR = os.path.join(PACKAGE_ROOT, "tests", "figures")
 
 class TestToroidalFilament:
     """Test the CylindricalFilament class."""
@@ -153,20 +158,129 @@ class TestToroidalFilament:
         np.testing.assert_allclose(distances_default, a, rtol=1e-10)
         np.testing.assert_allclose(distances_custom, a, rtol=1e-10)
 
-    @pytest.mark.parametrize("mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": 3, "n": 1}])
+    @pytest.mark.parametrize("mode", [{"m": 1, "n": 1}, {"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": 3, "n": 1}])
     def test_points_and_currents(self, mode):
         """Test get_filament_list method for correct output dataset."""
         major_radius = 1
         minor_radius = 0.3
         num_filaments = 12
 
-        with tempfile.TemporaryDirectory() as working_directory:
-            toroidal_tracer = ToroidalFilamentTracer(
-                mode["m"], mode["n"], major_radius, 0, minor_radius, num_points=100
-            )
+        fig_dir = os.path.join(FIG_DIR, "test_points_and_currents")
+        if not os.path.exists(fig_dir):
+            os.makedirs(fig_dir)
 
-            filament_ds = toroidal_tracer.get_filament_ds(num_filaments=num_filaments, coordinate_system="toroidal")
+        toroidal_tracer = ToroidalFilamentTracer(
+            mode["m"], mode["n"], major_radius, 0, minor_radius, num_points=100
+        )
 
-            # Make 
+        filament_ds = toroidal_tracer.get_filament_ds(num_filaments=num_filaments, coordinate_system="toroidal")
 
-        
+        # Create plot of filament points in phi and eta coordinates
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+
+        # Extract data
+        phi_vals = filament_ds["phi"].values  # Shape: (num_filaments, num_points)
+        eta_vals = filament_ds["eta"].values  # Shape: (num_points,)
+        currents = filament_ds["current"].values  # Shape: (num_filaments,), complex values
+
+        # Determine the phi range for appropriate x-axis ticks
+        phi_min = phi_vals.min()
+        phi_max = phi_vals.max()
+
+        # Create x-axis ticks that span the entire phi domain
+        # Number of ticks based on the range (use pi/2 increments)
+        num_x_ticks = int(np.ceil(phi_max / (np.pi/2))) + 1
+        x_ticks = [i * np.pi/2 for i in range(num_x_ticks)]
+        x_labels = []
+        for tick in x_ticks:
+            # Convert to fraction of pi
+            ratio = tick / np.pi
+            if ratio == 0:
+                x_labels.append('0')
+            elif ratio == 0.5:
+                x_labels.append(r'$\pi/2$')
+            elif ratio == 1:
+                x_labels.append(r'$\pi$')
+            elif ratio == 1.5:
+                x_labels.append(r'$3\pi/2$')
+            elif ratio == 2:
+                x_labels.append(r'$2\pi$')
+            elif ratio == 2.5:
+                x_labels.append(r'$5\pi/2$')
+            elif ratio == 3:
+                x_labels.append(r'$3\pi$')
+            elif ratio == 3.5:
+                x_labels.append(r'$7\pi/2$')
+            elif ratio == 4:
+                x_labels.append(r'$4\pi$')
+            else:
+                # For other values, format as fraction
+                from fractions import Fraction
+                frac = Fraction(int(ratio * 2), 2).limit_denominator()
+                if frac.denominator == 1:
+                    x_labels.append(f'${frac.numerator}\pi$')
+                else:
+                    x_labels.append(f'${frac.numerator}\pi/{frac.denominator}$')
+
+        # Plot real component of current
+        scatter1 = ax1.scatter(
+            phi_vals.flatten(),
+            np.tile(eta_vals, num_filaments),
+            c=np.repeat(currents.real, phi_vals.shape[1]),
+            cmap='RdBu_r',
+            s=20,
+            alpha=0.6
+        )
+        ax1.set_xlabel('phi')
+        ax1.set_ylabel('eta')
+        ax1.set_title(f'Real Component of Current (m={mode["m"]}, n={mode["n"]})')
+        ax1.grid(True, alpha=0.3)
+
+        # Set x-axis ticks with pi fractions
+        ax1.set_xticks(x_ticks)
+        ax1.set_xticklabels(x_labels)
+
+        # Set y-axis ticks with pi fractions
+        ax1.set_yticks([0, np.pi/6, np.pi/4, np.pi/3, np.pi/2, 2*np.pi/3, 3*np.pi/4, 5*np.pi/6, np.pi,
+                        7*np.pi/6, 5*np.pi/4, 4*np.pi/3, 3*np.pi/2, 5*np.pi/3, 7*np.pi/4, 11*np.pi/6, 2*np.pi])
+        ax1.set_yticklabels(['0', r'$\pi/6$', r'$\pi/4$', r'$\pi/3$', r'$\pi/2$', r'$2\pi/3$', r'$3\pi/4$',
+                                r'$5\pi/6$', r'$\pi$', r'$7\pi/6$', r'$5\pi/4$', r'$4\pi/3$', r'$3\pi/2$',
+                                r'$5\pi/3$', r'$7\pi/4$', r'$11\pi/6$', r'$2\pi$'])
+
+        cbar1 = plt.colorbar(scatter1, ax=ax1)
+        cbar1.set_label('Re(I)')
+
+        # Plot imaginary component of current
+        scatter2 = ax2.scatter(
+            phi_vals.flatten(),
+            np.tile(eta_vals, num_filaments),
+            c=np.repeat(currents.imag, phi_vals.shape[1]),
+            cmap='RdBu_r',
+            s=20,
+            alpha=0.6
+        )
+        ax2.set_xlabel('phi')
+        ax2.set_ylabel('eta')
+        ax2.set_title(f'Imaginary Component of Current (m={mode["m"]}, n={mode["n"]})')
+        ax2.grid(True, alpha=0.3)
+
+        # Set x-axis ticks with pi fractions (same as ax1)
+        ax2.set_xticks(x_ticks)
+        ax2.set_xticklabels(x_labels)
+
+        # Set y-axis ticks with pi fractions
+        ax2.set_yticks([0, np.pi/6, np.pi/4, np.pi/3, np.pi/2, 2*np.pi/3, 3*np.pi/4, 5*np.pi/6, np.pi,
+                        7*np.pi/6, 5*np.pi/4, 4*np.pi/3, 3*np.pi/2, 5*np.pi/3, 7*np.pi/4, 11*np.pi/6, 2*np.pi])
+        ax2.set_yticklabels(['0', r'$\pi/6$', r'$\pi/4$', r'$\pi/3$', r'$\pi/2$', r'$2\pi/3$', r'$3\pi/4$',
+                                r'$5\pi/6$', r'$\pi$', r'$7\pi/6$', r'$5\pi/4$', r'$4\pi/3$', r'$3\pi/2$',
+                                r'$5\pi/3$', r'$7\pi/4$', r'$11\pi/6$', r'$2\pi$'])
+
+        cbar2 = plt.colorbar(scatter2, ax=ax2)
+        cbar2.set_label('Im(I)')
+
+        fig.tight_layout()
+        fig_path = os.path.join(fig_dir, f'm{mode["m"]}_n{mode["n"]}.png')  
+        fig.savefig(fig_path, dpi=150)
+        print(f'Saved filament current plot for mode m={mode["m"]}, n={mode["n"]} to {fig_path}')
+
+            

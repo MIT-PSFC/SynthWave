@@ -212,5 +212,9 @@ __marimo__/
 # Symlink
 submodules/OpenFUSIONToolkit
 
+# Tests
+synthwave/tests/figures/*.png
+synthwave/tests/figures/**/*.png
+
 # scratch
 thincurr_scratch/

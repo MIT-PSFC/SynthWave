@@ -128,7 +128,7 @@ class FilamentTracer(ABC):
         elif coordinate_system == "toroidal":
             ds = xr.Dataset(
                 data_vars={
-                    "eta": (("filament"), filament_etas),
+                    "eta": (("point"), filament_etas),
                     "phi": (("filament", "point"), all_filament_points[:, :, 1]),
                     "current": (("filament"), filament_currents),
                 },
