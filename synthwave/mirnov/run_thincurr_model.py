@@ -21,11 +21,21 @@ def calc_frequency_response(
     Calculate the measured frequency response at the given probes due to filaments defined by the tracer.
     Assumes that the OFT input files have already been generated in the working_directory.
 
+    Also note that this isn't exactly what a probe would measure, since the output is in [T] not [T/s].
+    This is fine for mode structure identification, but for amplitude matching the output needs to be corrected elsewhere.
+
+    Args:
+        probe_details (xr.Dataset): Dataset containing probe location and normal orientation in x,y,z geometry
+        tracer (FilamentTracer): FilamentTracer object defining the filaments to simulate
+        freq (float): Frequency to simulate [Hz]
+        mesh_file (str): Path to the vessel mesh file for ThinCurr
+        working_directory (str): Directory to read/write ThinCurr files
+        n_threads (Optional[int], default=None): Number of threads to use for ThinCurr calculations. If None, uses all available CPU cores.
+
     Returns:
         total_response (np.ndarray): Complex array of total probe signals [T]
         vessel_response (np.ndarray): Complex array of probe signals due to vessel currents [T]
         direct_response (np.ndarray): Complex array of probe signals due to direct filament coupling [T]
-
     """
 
     # Create thin wall model
@@ -48,13 +58,9 @@ def calc_frequency_response(
     # filament -> finite element mesh
     Mc = tw_model.compute_Mcoil()
 
-    # Build inductance matrix because apparently that's required
+    # Build inductance matrix
     tw_model.compute_Lmat(
         use_hodlr=True,
-        cache_file=os.path.join(
-            working_directory,
-            f"HOLDR_L_{os.path.basename(mesh_file)}_{probe_details.attrs['probe_set_name']}.save",
-        ),
     )
     tw_model.compute_Rmat()
 
@@ -66,25 +72,29 @@ def calc_frequency_response(
         filament_details.current.values
     )  # Complex array for rotating wave
 
-    driver = np.zeros((2, tw_model.nelems))
     # Driver represents the complex phasor: real and imaginary parts
+    driver = np.zeros((2, tw_model.nelems))
     driver[0, :] = np.dot(filament_currents.real, Mc)
     driver[1, :] = np.dot(filament_currents.imag, Mc)
 
     # Calculate mesh response at given frequency
-    mesh_response = tw_model.compute_freq_response(fdriver=driver, freq=freq)
+    mesh_response_matrix = tw_model.compute_freq_response(fdriver=driver, freq=freq)
 
     # Contribution from mesh current to the sensor
-    vessel_response_matrix = np.dot(mesh_response, Msensor)
+    vessel_response_matrix = np.dot(mesh_response_matrix, Msensor)
     vessel_response = vessel_response_matrix[0, :] + 1j * vessel_response_matrix[1, :]
 
     # Contribution from filament current directly to the sensor
     # This is the mutual inductance flux: Phi = M * I (both are complex)
     direct_response = np.dot(filament_currents, Msc)
 
-    total_response = vessel_response + direct_response
+    total_response = direct_response + vessel_response
 
-    return total_response, vessel_response, direct_response
+    tw_model.save_current(mesh_response_matrix[0, :], "Jr_coil")
+    tw_model.save_current(mesh_response_matrix[1, :], "Ji_coil")
+    tw_model.build_XDMF()
+
+    return total_response, direct_response, vessel_response
 
 
 ################################################################################################

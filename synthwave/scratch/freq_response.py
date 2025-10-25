@@ -31,7 +31,6 @@ if __name__ == "__main__":
     toroidal_tracer = ToroidalFilamentTracer(2, 1, MAJOR_RADIUS, 0, MINOR_RADIUS - 0.1)
     filament_list = toroidal_tracer.get_filament_list(num_filaments=10)
 
-    oft_filament_file = os.path.join(EXAMPLE_DIR, "oft_in.xml")
     gen_OFT_filament_and_eta_file(
         working_directory=EXAMPLE_DIR,
         filament_list=filament_list,
@@ -44,9 +43,9 @@ if __name__ == "__main__":
                 ("sensor", "coord"),
                 np.array(
                     [
-                        [MAJOR_RADIUS - 0.01, 0.0, 0.0],  # sensor on x axis
-                        [0, MAJOR_RADIUS - 0.01, 0.0],  # sensor on y axis
-                        [MAJOR_RADIUS, 0, MINOR_RADIUS - 0.01],  # sensor on z axis
+                        [MAJOR_RADIUS + MINOR_RADIUS, 0.0, 0.0],  # sensor on x axis
+                        [0, MAJOR_RADIUS + MINOR_RADIUS, 0.0],  # sensor on y axis
+                        [MAJOR_RADIUS, 0, MINOR_RADIUS],  # sensor on z axis
                     ]
                 ),
             ),
@@ -74,7 +73,7 @@ if __name__ == "__main__":
         working_directory=EXAMPLE_DIR,
     )
 
-    total_response, vessel_response, direct_respons = calc_frequency_response(
+    total_response, vessel_response, direct_response = calc_frequency_response(
         probe_details=probe_details,
         tracer=toroidal_tracer,
         freq=10e3,
@@ -85,7 +84,7 @@ if __name__ == "__main__":
     # Get the angle of each response
     total_response_angle = np.angle(total_response)
     vessel_response_angle = np.angle(vessel_response)
-    direct_response_angle = np.angle(direct_respons)
+    direct_response_angle = np.angle(direct_response)
 
     # Print the results
     for i, sensor in enumerate(probe_details.sensor.values):
