@@ -48,7 +48,7 @@ class FilamentTracer(ABC):
 
         return filament_points, filament_etas
 
-    def make_points_and_currents(
+    def get_filament_ds(
         self,
         num_filaments: int,
         num_filament_points: Optional[int] = None,
@@ -59,10 +59,10 @@ class FilamentTracer(ABC):
         Args:
             num_filaments (int): How many individual filaments to create
             num_filament_points (Optional[int], default = None): Number of points per filament. If None, uses self.num_points
-            coordinate_system (Optional[str], default = "cylindrical"): Coordinate system for output points. Options are "cylindrical" or "cartesian".
+            coordinate_system (Optional[str], default = "cylindrical"): Coordinate system for output points. Options are "cylindrical", "cartesian", or "toroidal".
 
         Returns:
-            xr.Dataset: Dataset containing filament points and currents. Dimensions are 'filament' and 'point', with variables 'R', 'phi', 'Z' or 'x', 'y', 'z', and 'current'.
+            xr.Dataset: Dataset containing filament points and currents. Dimensions are 'filament' and 'point', with variables 'R', 'phi', 'Z' or 'x', 'y', 'z' or 'eta', 'phi', and 'current'.
         """
 
         if num_filaments <= 0:
@@ -71,17 +71,15 @@ class FilamentTracer(ABC):
         if num_filament_points is None:
             num_filament_points = self.num_points
 
-        if coordinate_system not in ["cylindrical", "cartesian"]:
+        if coordinate_system not in ["cylindrical", "cartesian", "toroidal"]:
             raise ValueError(
-                "coordinate_system must be either 'cylindrical' or 'cartesian'"
+                "coordinate_system must be either 'cylindrical', 'cartesian', or 'toroidal'"
             )
 
         # Start with a filament that has zero toroidal offset
-        base_filament_points = self.trace(num_filament_points)[0]  # Shape (N, 3)
+        base_filament_points, filament_etas = self.trace(num_filament_points)
 
         # Create toroidal offsets and corresponding currents
-        ratio = Fraction(self.m, self.n)
-        n_local = ratio.denominator
         starting_angles = np.linspace(0, 2 * np.pi, num_filaments, endpoint=False)
 
         all_filament_points = np.repeat(
@@ -90,7 +88,10 @@ class FilamentTracer(ABC):
         all_filament_points[:, :, 1] += starting_angles[
             :, np.newaxis
         ]  # Apply toroidal offsets
+
         # Complex currents for rotating wave: I(phi) = I_0 * exp(i*n*phi)
+        ratio = Fraction(self.m, self.n)
+        n_local = ratio.denominator
         filament_currents = np.exp(1j * starting_angles * n_local)
 
         if coordinate_system == "cylindrical":
@@ -117,6 +118,18 @@ class FilamentTracer(ABC):
                     "x": (("filament", "point"), cartesian_points[0, :, :]),
                     "y": (("filament", "point"), cartesian_points[1, :, :]),
                     "z": (("filament", "point"), cartesian_points[2, :, :]),
+                    "current": (("filament"), filament_currents),
+                },
+                coords={
+                    "filament": np.arange(num_filaments),
+                    "point": np.arange(num_filament_points),
+                },
+            )
+        elif coordinate_system == "toroidal":
+            ds = xr.Dataset(
+                data_vars={
+                    "eta": (("filament"), filament_etas),
+                    "phi": (("filament", "point"), all_filament_points[:, :, 1]),
                     "current": (("filament"), filament_currents),
                 },
                 coords={
@@ -224,7 +237,7 @@ class ToroidalFilamentTracer(FilamentTracer):
             num_filament_points = self.num_points
 
         # Create a circular filament around the magnetic axis
-        phi = np.linspace(0, 2 * np.pi * self.m, num_filament_points)
+        phi = np.linspace(0, 2 * np.pi * self.m / self.n, num_filament_points)
         filament_etas = np.linspace(0, 2 * np.pi, num_filament_points)
         R = self.R0 + self.a * np.cos(filament_etas)
         Z = self.Z0 + self.a * np.sin(filament_etas)
