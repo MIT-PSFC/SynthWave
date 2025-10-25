@@ -38,8 +38,10 @@ def gen_OFT_filament_and_eta_file(
         if debug:
             print(f"File open for writing: {filament_file}")
 
-        f.write("\t<coil_set>\n")
         for filament in filament_list:
+            # All coils in a coil set share the same current waveform,
+            # So we group each filament into its own coil set
+            f.write("\t<coil_set>\n")
             f.write(f'\n\t\t<coil npts="{np.shape(filament)[0]}" scale="1.0">\n')
             for xyz in filament:
                 x = xyz[0]
@@ -47,7 +49,7 @@ def gen_OFT_filament_and_eta_file(
                 z = xyz[2]
                 f.write("\t\t\t %1.3f, %1.3f, %1.3f\n" % (x, y, z))
             f.write("\t\t</coil>\n")
-        f.write("\t</coil_set>\n")
+            f.write("\t</coil_set>\n")
         f.write("\t</icoils>\n\t</thincurr>\n</oft>")
 
     if debug:
