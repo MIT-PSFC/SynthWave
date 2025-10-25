@@ -52,14 +52,14 @@ class FilamentTracer(ABC):
         self,
         num_filaments: int,
         num_filament_points: Optional[int] = None,
-        coordinate_system: Optional[str] = "cylindrical",
+        coordinate_system: Optional[str] = "cartesian",
     ) -> xr.Dataset:
         """Generate points and corresponding currents for multiple filaments.
 
         Args:
             num_filaments (int): How many individual filaments to create
             num_filament_points (Optional[int], default = None): Number of points per filament. If None, uses self.num_points
-            coordinate_system (Optional[str], default = "cylindrical"): Coordinate system for output points. Options are "cylindrical", "cartesian", or "toroidal".
+            coordinate_system (Optional[str], default = "cartesian"): Coordinate system for output points. Options are "cylindrical", "cartesian", or "toroidal".
 
         Returns:
             xr.Dataset: Dataset containing filament points and currents. Dimensions are 'filament' and 'point', with variables 'R', 'phi', 'Z' or 'x', 'y', 'z' or 'eta', 'phi', and 'current'.
@@ -144,14 +144,14 @@ class FilamentTracer(ABC):
         self,
         num_filaments: int,
         num_filament_points: Optional[int] = None,
-        coordinate_system: str = "cylindrical",
+        coordinate_system: str = "cartesian",
     ) -> list[np.ndarray]:
         """Generate a list of filaments, each represented as an array of shape (N, 3) in cylindrical coordinates.
 
         Args:
             num_filaments (int): Number of filaments to generate.
             num_filament_points (Optional[int], default = None): Number of points per filament. If None, uses self.num_points.
-            coordinate_system (str, default = "cylindrical"): Coordinate system for output points. Options are "cylindrical" or "cartesian".
+            coordinate_system (str, default = "cartesian"): Coordinate system for output points. Options are "cylindrical" or "cartesian".
 
         Returns:
             list[np.ndarray]: List of filaments, each of shape (N, 3) with columns [R, phi, Z].
@@ -167,7 +167,7 @@ class FilamentTracer(ABC):
                 "coordinate_system must be either 'cylindrical' or 'cartesian'"
             )
 
-        filament_points_ds = self.make_points_and_currents(
+        filament_points_ds = self.get_filament_ds(
             num_filaments, num_filament_points, coordinate_system
         )
 

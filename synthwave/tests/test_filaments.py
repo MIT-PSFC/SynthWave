@@ -158,12 +158,12 @@ class TestToroidalFilament:
         np.testing.assert_allclose(distances_default, a, rtol=1e-10)
         np.testing.assert_allclose(distances_custom, a, rtol=1e-10)
 
-    @pytest.mark.parametrize("mode", [{"m": 1, "n": 1}, {"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": 3, "n": 1}])
+    @pytest.mark.parametrize("mode", [{"m": 1, "n": 1}, {"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": 3, "n": 1}, {"m": 4, "n": 3}, {"m": 5, "n": 4}])
     def test_points_and_currents(self, mode):
         """Test get_filament_list method for correct output dataset."""
         major_radius = 1
         minor_radius = 0.3
-        num_filaments = 12
+        num_filaments = 24
 
         fig_dir = os.path.join(FIG_DIR, "test_points_and_currents")
         if not os.path.exists(fig_dir):

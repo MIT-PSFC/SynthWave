@@ -65,7 +65,7 @@ def calc_frequency_response(
     tw_model.compute_Rmat()
 
     # Build driver from filaments
-    filament_details = tracer.make_points_and_currents(
+    filament_details = tracer.get_filament_ds(
         num_filaments=Mc.shape[0], coordinate_system="cartesian"
     )
     filament_currents = (
