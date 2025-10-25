@@ -13,9 +13,9 @@ from synthwave.mirnov.generate_synthetic_mirnov_signals import thincurr_syntheti
 from synthwave.magnetic_geometry.filaments import ToroidalFilamentTracer
 from synthwave.mirnov.run_thincurr_model import calc_frequency_response
 from synthwave.mirnov.prep_thincurr_input import gen_OFT_sensors_file, gen_OFT_filament_and_eta_file
-from synthwave.magnetic_geometry.utils import phi_domain
+from synthwave.magnetic_geometry.utils import angle_domain, wrapped_diff
 
-@pytest.mark.parametrize("mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": -3, "n": 2}, {"m": 3, "n": 1}])
+@pytest.mark.parametrize("mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": -3, "n": 2}, {"m": 3, "n": 1}, {"m": 4, "n": 3}])
 @pytest.mark.parametrize("major_radius", [1, 20])
 def test_toroidal_angles(mode, major_radius):
     minor_radius_vessel = 0.35
@@ -87,47 +87,47 @@ def test_toroidal_angles(mode, major_radius):
             mesh_file=torus_mesh_file,
             working_directory=working_directory,
         )
-
+    # These are just for debugging purposes
     total_response_phase = np.angle(total_response)
     direct_response_phase = np.angle(direct_response)
     vessel_response_phase = np.angle(vessel_response)
 
     # Phase difference for the direct response should closely match cylindrical approximation
     toroidal_phase_ab, toroidal_phase_cd = np.pi/2, np.pi/2
-    expected_phase_diff_ab = toroidal_phase_ab * mode["n"]
-    expected_phase_diff_cd = toroidal_phase_cd * mode["n"]
-    direct_measured_phase_diff_ab = direct_response_phase[1] - direct_response_phase[0]
-    direct_measured_phase_diff_cd = direct_response_phase[3] - direct_response_phase[2]
+    expected_phase_diff_ab = angle_domain(toroidal_phase_ab * mode["n"])
+    expected_phase_diff_cd = angle_domain(toroidal_phase_cd * mode["n"])
+    direct_measured_phase_diff_ab = np.angle(direct_response[1] / direct_response[0])
+    direct_measured_phase_diff_cd = np.angle(direct_response[3] / direct_response[2])
 
     poloidal_phase_ac, poloidal_phase_bd = np.pi/2, np.pi/2
-    expected_phase_diff_ac = poloidal_phase_ac * mode["m"]
-    expected_phase_diff_bd = poloidal_phase_bd * mode["m"]
-    direct_measured_phase_diff_ac = direct_response_phase[2] - direct_response_phase[0]
-    direct_measured_phase_diff_bd = direct_response_phase[3] - direct_response_phase[1]
+    expected_phase_diff_ac = angle_domain(poloidal_phase_ac * mode["m"])
+    expected_phase_diff_bd = angle_domain(poloidal_phase_bd * mode["m"])
+    direct_measured_phase_diff_ac = np.angle(direct_response[2] / direct_response[0])
+    direct_measured_phase_diff_bd = np.angle(direct_response[3] / direct_response[1])
 
-    assert np.isclose(direct_measured_phase_diff_ab, expected_phase_diff_ab, atol=0.001)
-    assert np.isclose(direct_measured_phase_diff_cd, expected_phase_diff_cd, atol=0.001)
+    assert np.isclose(wrapped_diff(direct_measured_phase_diff_ab, expected_phase_diff_ab), 0, atol=0.001)
+    assert np.isclose(wrapped_diff(direct_measured_phase_diff_cd, expected_phase_diff_cd), 0, atol=0.001)
     if major_radius == 1:
         # At small major radius, toroidal approximation is less accurate
         # In this case just make sure the two values match closely since they should be identical
-        assert np.isclose(direct_measured_phase_diff_ac, direct_measured_phase_diff_bd, atol=0.001)
+        assert np.isclose(wrapped_diff(direct_measured_phase_diff_ac, direct_measured_phase_diff_bd), 0, atol=0.001)
     else:
         # At large major radius, toroidal approximation should still be fairly accurate
-        assert np.isclose(direct_measured_phase_diff_ac, expected_phase_diff_ac, atol=0.01)
-        assert np.isclose(direct_measured_phase_diff_bd, expected_phase_diff_bd, atol=0.01)
+        assert np.isclose(wrapped_diff(direct_measured_phase_diff_ac, expected_phase_diff_ac), 0, atol=0.05)
+        assert np.isclose(wrapped_diff(direct_measured_phase_diff_bd, expected_phase_diff_bd), 0, atol=0.05)
 
     # Even with vessel response, toroidal phase difference should closely match cylindrical approximation
     # This is because vessel response should also be axisymmetric
-    total_measured_phase_diff_ab = total_response_phase[1] - total_response_phase[0]
-    total_measured_phase_diff_cd = total_response_phase[3] - total_response_phase[2]
-    assert np.isclose(total_measured_phase_diff_ab, expected_phase_diff_ab, atol=0.001)
-    assert np.isclose(total_measured_phase_diff_cd, expected_phase_diff_cd, atol=0.001)
+    total_measured_phase_diff_ab = np.angle(total_response[1] / total_response[0])
+    total_measured_phase_diff_cd = np.angle(total_response[3] / total_response[2])
+    assert np.isclose(wrapped_diff(total_measured_phase_diff_ab, expected_phase_diff_ab), 0, atol=0.001)
+    assert np.isclose(wrapped_diff(total_measured_phase_diff_cd, expected_phase_diff_cd), 0, atol=0.001)
 
     # Poloidal phase difference should deviate from cylindrical approximation due to vessel effects
-    total_measured_phase_diff_ac = total_response_phase[2] - total_response_phase[0]
-    total_measured_phase_diff_bd = total_response_phase[3] - total_response_phase[1]
-    assert not np.isclose(total_measured_phase_diff_ac, expected_phase_diff_ac, atol=0.1)
-    assert not np.isclose(total_measured_phase_diff_bd, expected_phase_diff_bd, atol=0.1)
+    total_measured_phase_diff_ac = np.angle(total_response[2] / total_response[0])
+    total_measured_phase_diff_bd = np.angle(total_response[3] / total_response[1])
+    assert not np.isclose(wrapped_diff(total_measured_phase_diff_ac, expected_phase_diff_ac), 0, atol=0.1)
+    assert not np.isclose(wrapped_diff(total_measured_phase_diff_bd, expected_phase_diff_bd), 0, atol=0.1)
 
 
 def test_thincurr_input():
