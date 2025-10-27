@@ -1,3 +1,4 @@
+import xarray as xr
 from typing import Optional
 from enum import Enum
 from abc import ABC, abstractmethod
@@ -5,24 +6,14 @@ import numpy as np
 from scipy.interpolate import make_interp_spline
 from scipy.optimize import newton
 from fractions import Fraction
+from synthwave.magnetic_geometry.utils import cylindrical_to_cartesian
 
 from synthwave.magnetic_geometry.equilibrium_field import (
     EquilibriumField,
-    biot_savart_cylindrical,
 )
 
 
-# Types of filament tracing methods
-class TraceType(Enum):
-    CYLINDRICAL = 0  # Cylindrical approximation of the magnetic geometry
-    NAIVE = 1  # Naive tracing, following the rational surface but not the field
-    SINGLE = (
-        2  # Single tracing method, using the magnetic field to determine d(phi)/d(eta)
-    )
-    AVERAGE = 3  # Average tracing method, using the magnetic field to determine d(phi)/d(eta) and averaging between points
-
-
-class BaseFilament(ABC):
+class FilamentTracer(ABC):
     """Abstract class for filament representation."""
 
     def __init__(self, m: int, n: int, num_points: Optional[int] = 1000):
@@ -35,7 +26,15 @@ class BaseFilament(ABC):
     def _trace(
         self, num_filament_points: Optional[int] = None
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Trace the filament and return the points in cylindrical coordinates (R, phi, Z)"""
+        """Trace the filament and return the points in cylindrical coordinates (R, phi, Z) as well as the corresponding eta values.
+
+        Args:
+            num_filament_points (Optional[int]): Number of points to trace along the filament. If None, uses self.num_points.
+        Returns:
+            tuple[np.ndarray, np.ndarray]: Tuple containing:
+                - filament_points: Array of shape (N, 3) where each row is [R, phi, Z] in cylindrical coordinates.
+                - filament_etas: Array of shape (N,) containing the eta values corresponding to each point.
+        """
 
     def trace(
         self, num_filament_points: Optional[int] = None
@@ -49,6 +48,145 @@ class BaseFilament(ABC):
 
         return filament_points, filament_etas
 
+    def get_filament_ds(
+        self,
+        num_filaments: int,
+        num_filament_points: Optional[int] = None,
+        coordinate_system: Optional[str] = "cartesian",
+    ) -> xr.Dataset:
+        """Generate points and corresponding currents for multiple filaments.
+
+        Args:
+            num_filaments (int): How many individual filaments to create
+            num_filament_points (Optional[int], default = None): Number of points per filament. If None, uses self.num_points
+            coordinate_system (Optional[str], default = "cartesian"): Coordinate system for output points. Options are "cylindrical", "cartesian", or "toroidal".
+
+        Returns:
+            xr.Dataset: Dataset containing filament points and currents. Dimensions are 'filament' and 'point', with variables 'R', 'phi', 'Z' or 'x', 'y', 'z' or 'eta', 'phi', and 'current'.
+        """
+
+        if num_filaments <= 0:
+            raise ValueError("num_filaments must be a positive integer")
+
+        if num_filament_points is None:
+            num_filament_points = self.num_points
+
+        if coordinate_system not in ["cylindrical", "cartesian", "toroidal"]:
+            raise ValueError(
+                "coordinate_system must be either 'cylindrical', 'cartesian', or 'toroidal'"
+            )
+
+        # Start with a filament that has zero toroidal offset
+        base_filament_points, filament_etas = self.trace(num_filament_points)
+
+        # Create toroidal offsets and corresponding currents
+        starting_angles = np.linspace(0, 2 * np.pi, num_filaments, endpoint=False)
+
+        all_filament_points = np.repeat(
+            base_filament_points[np.newaxis, :, :], num_filaments, axis=0
+        )  # Shape (num_filaments, N, 3)
+        all_filament_points[:, :, 1] += starting_angles[
+            :, np.newaxis
+        ]  # Apply toroidal offsets
+
+        # Complex currents for rotating wave: I(phi) = I_0 * exp(i*n*phi)
+        ratio = Fraction(self.m, self.n)
+        n_local = ratio.denominator
+        filament_currents = np.exp(1j * starting_angles * n_local)
+
+        if coordinate_system == "cylindrical":
+            ds = xr.Dataset(
+                data_vars={
+                    "R": (("filament", "point"), all_filament_points[:, :, 0]),
+                    "phi": (("filament", "point"), all_filament_points[:, :, 1]),
+                    "Z": (("filament", "point"), all_filament_points[:, :, 2]),
+                    "current": (("filament"), filament_currents),
+                },
+                coords={
+                    "filament": np.arange(num_filaments),
+                    "point": np.arange(num_filament_points),
+                },
+            )
+        elif coordinate_system == "cartesian":
+            cartesian_points = cylindrical_to_cartesian(
+                all_filament_points[:, :, 0],
+                all_filament_points[:, :, 1],
+                all_filament_points[:, :, 2],
+            )  # Shape (3, num_filaments, N)
+            ds = xr.Dataset(
+                data_vars={
+                    "x": (("filament", "point"), cartesian_points[0, :, :]),
+                    "y": (("filament", "point"), cartesian_points[1, :, :]),
+                    "z": (("filament", "point"), cartesian_points[2, :, :]),
+                    "current": (("filament"), filament_currents),
+                },
+                coords={
+                    "filament": np.arange(num_filaments),
+                    "point": np.arange(num_filament_points),
+                },
+            )
+        elif coordinate_system == "toroidal":
+            ds = xr.Dataset(
+                data_vars={
+                    "eta": (("point"), filament_etas),
+                    "phi": (("filament", "point"), all_filament_points[:, :, 1]),
+                    "current": (("filament"), filament_currents),
+                },
+                coords={
+                    "filament": np.arange(num_filaments),
+                    "point": np.arange(num_filament_points),
+                },
+            )
+
+        return ds
+
+    def get_filament_list(
+        self,
+        num_filaments: int,
+        num_filament_points: Optional[int] = None,
+        coordinate_system: str = "cartesian",
+    ) -> list[np.ndarray]:
+        """Generate a list of filaments, each represented as an array of shape (N, 3) in cylindrical coordinates.
+
+        Args:
+            num_filaments (int): Number of filaments to generate.
+            num_filament_points (Optional[int], default = None): Number of points per filament. If None, uses self.num_points.
+            coordinate_system (str, default = "cartesian"): Coordinate system for output points. Options are "cylindrical" or "cartesian".
+
+        Returns:
+            list[np.ndarray]: List of filaments, each of shape (N, 3) with columns [R, phi, Z].
+        """
+        if num_filaments <= 0:
+            raise ValueError("num_filaments must be a positive integer")
+
+        if num_filament_points is None:
+            num_filament_points = self.num_points
+
+        if coordinate_system not in ["cylindrical", "cartesian"]:
+            raise ValueError(
+                "coordinate_system must be either 'cylindrical' or 'cartesian'"
+            )
+
+        filament_points_ds = self.get_filament_ds(
+            num_filaments, num_filament_points, coordinate_system
+        )
+
+        filament_list = []
+        for i in range(num_filaments):
+            if coordinate_system == "cylindrical":
+                R = filament_points_ds["R"].isel(filament=i).values
+                phi = filament_points_ds["phi"].isel(filament=i).values
+                Z = filament_points_ds["Z"].isel(filament=i).values
+                filament_array = np.array([R, phi, Z]).T
+            elif coordinate_system == "cartesian":
+                x = filament_points_ds["x"].isel(filament=i).values
+                y = filament_points_ds["y"].isel(filament=i).values
+                z = filament_points_ds["z"].isel(filament=i).values
+                filament_array = np.array([x, y, z]).T
+            filament_list.append(filament_array)
+
+        return filament_list
+
     def make_filament_spline(self):
         """Create a spline which puts eta in terms of phi for this filament."""
         filament_points, filament_etas = self._trace(self.num_points)
@@ -56,49 +194,8 @@ class BaseFilament(ABC):
         spline = make_interp_spline(filament_points[:, 1], filament_etas)
         return spline
 
-    def normalized_filament_field(
-        self,
-        eval_points: np.ndarray,
-        phi_0: float = 0,
-        num_filament_points: Optional[int] = None,
-        num_filaments: Optional[int] = 1,
-    ) -> np.ndarray:
-        """For a grid of points in R, phi, Z, find the normalized magnetic field at those points.
 
-        Parameters
-        ----------
-        eval_points : np.ndarray
-            Array of shape (N, 3) where each row is [R, phi, Z] in cylindrical coordinates.
-        phi_0 : float, optional
-            Initial phi offset for the mode's phase.
-        num_filament_points : int, optional
-            Number of points within each filament.
-        num_filaments : int, optional
-            Number of filaments to trace.
-
-        Returns
-        -------
-        np.ndarray
-            Array of shape (N, 3) where each row is the normalized magnetic field [Br, Bphi, Bz] at the corresponding eval_points.
-        """
-
-        # Filaments are evenly spaced toroidally and have a periodic current distribution
-        filament_angle = np.linspace(0, 2 * np.pi, num_filaments, endpoint=False)
-        filament_current = np.cos((filament_angle * self.n)) / num_filaments
-        filament_angle += phi_0  # Apply phase offset to rotate all filaments (needs to happen after the current is defined)
-
-        primary_filament_points, _ = self.trace(num_filament_points)
-        vacuum_field = np.zeros((len(eval_points), 3))
-        for i, point in enumerate(eval_points):
-            # Contribution from each filament
-            for phi, current in zip(filament_angle, filament_current):
-                filament_points = primary_filament_points + np.array([0, phi, 0])
-                vacuum_field[i, :] += biot_savart_cylindrical(
-                    point, filament_points, current
-                )
-
-
-class ToroidalFilament(BaseFilament):
+class ToroidalFilamentTracer(FilamentTracer):
     """Filament for toroidal approximation of the magnetic geometry."""
 
     def __init__(
@@ -140,18 +237,25 @@ class ToroidalFilament(BaseFilament):
             num_filament_points = self.num_points
 
         # Create a circular filament around the magnetic axis
-        phi = np.linspace(0, 2 * np.pi * self.m, num_filament_points)
-        R = self.R0 + self.a * np.cos(phi)
-        Z = self.Z0 + self.a * np.sin(phi)
+        phi = np.linspace(0, 2 * np.pi * self.m / self.n, num_filament_points)
+        filament_etas = np.linspace(0, 2 * np.pi, num_filament_points)
+        R = self.R0 + self.a * np.cos(filament_etas)
+        Z = self.Z0 + self.a * np.sin(filament_etas)
 
         filament_points = np.column_stack((R, phi, Z))
-        filament_etas = np.linspace(0, 2 * np.pi, num_filament_points)
 
         return filament_points, filament_etas
 
 
-# Filament for equilibrium-based fields
-class EquilibriumFilament(BaseFilament):
+class EquilibriumFilamentTracer(FilamentTracer):
+    """Filament traced along an equilibrium magnetic field."""
+
+    class TraceType(Enum):
+        CYLINDRICAL = 0  # Cylindrical approximation of the magnetic geometry
+        NAIVE = 1  # Naive tracing, following the rational surface but not the field
+        SINGLE = 2  # Single tracing method, using the magnetic field to determine d(phi)/d(eta)
+        AVERAGE = 3  # Average tracing method, using the magnetic field to determine d(phi)/d(eta) and averaging between points
+
     def __init__(
         self,
         m: int,
@@ -253,20 +357,23 @@ class EquilibriumFilament(BaseFilament):
             return (Bt * r * d_eta) / (R * Bp)
 
         # Finalize filament trace based on method
-        if method == TraceType.CYLINDRICAL:
+        if method == EquilibriumFilamentTracer.TraceType.CYLINDRICAL:
             # Circular cross section around the magnetic axis
             avg_minor_radius = np.mean(poloidal_points[:, 2])
             R = self.eq_field.eqdsk.rmagx + avg_minor_radius * np.cos(filament_etas)
             phi = filament_etas * self.m / self.n
             Z = self.eq_field.eqdsk.zmagx - avg_minor_radius * np.sin(filament_etas)
             filament_points = np.column_stack((R, phi, Z))
-        elif method == TraceType.NAIVE:
+        elif method == EquilibriumFilamentTracer.TraceType.NAIVE:
             # Follows the rational surface but not the magnetic field
             phi = filament_etas * self.m / self.n
             filament_points = np.column_stack(
                 (poloidal_points[:, 0], phi, poloidal_points[:, 1])
             )
-        elif method in [TraceType.SINGLE, TraceType.AVERAGE]:
+        elif method in [
+            EquilibriumFilamentTracer.TraceType.SINGLE,
+            EquilibriumFilamentTracer.TraceType.AVERAGE,
+        ]:
             # determine d(phi)/d(eta) from magnetic field
             R = poloidal_points[:, 0]
             Z = poloidal_points[:, 1]
@@ -274,7 +381,7 @@ class EquilibriumFilament(BaseFilament):
             B = self.eq_field.get_field_at_point(R, Z)
             d_eta = np.mean(np.diff(filament_etas))
             d_phi = _d_phi(r, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1], d_eta)
-            if method == TraceType.SINGLE:
+            if method == EquilibriumFilamentTracer.TraceType.SINGLE:
                 phi = np.cumsum(d_phi) - d_phi[0]
             else:
                 # Average d_phi between adjacent points

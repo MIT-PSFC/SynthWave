@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 from OpenFUSIONToolkit import OFT_env
 from OpenFUSIONToolkit.ThinCurr import ThinCurr
 import numpy as np
@@ -8,11 +5,101 @@ import xarray as xr
 import pyvista
 import os
 import matplotlib.pyplot as plt
+from synthwave.magnetic_geometry.filaments import FilamentTracer
+from typing import Optional
+
+
+def calc_frequency_response(
+    probe_details: xr.Dataset,
+    tracer: FilamentTracer,
+    freq: float,
+    mesh_file: str,
+    working_directory: str,
+    n_threads: Optional[int] = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Calculate the measured frequency response at the given probes due to filaments defined by the tracer.
+    Assumes that the OFT input files have already been generated in the working_directory.
+
+    Also note that this isn't exactly what a probe would measure, since the output is in [T] not [T/s].
+    This is fine for mode structure identification, but for amplitude matching the output needs to be corrected elsewhere.
+
+    Args:
+        probe_details (xr.Dataset): Dataset containing probe location and normal orientation in x,y,z geometry
+        tracer (FilamentTracer): FilamentTracer object defining the filaments to simulate
+        freq (float): Frequency to simulate [Hz]
+        mesh_file (str): Path to the vessel mesh file for ThinCurr
+        working_directory (str): Directory to read/write ThinCurr files
+        n_threads (Optional[int], default=None): Number of threads to use for ThinCurr calculations. If None, uses all available CPU cores.
+
+    Returns:
+        total_response (np.ndarray): Complex array of total probe signals [T]
+        vessel_response (np.ndarray): Complex array of probe signals due to vessel currents [T]
+        direct_response (np.ndarray): Complex array of probe signals due to direct filament coupling [T]
+    """
+
+    # Create thin wall model
+    oft_env = OFT_env(nthreads=os.cpu_count() if n_threads is None else n_threads)
+    tw_model = ThinCurr(oft_env)
+    tw_model.setup_model(
+        mesh_file=mesh_file,
+        xml_filename=os.path.join(working_directory, "oft_in.xml"),
+    )
+    tw_model.setup_io(working_directory)
+
+    # Calculate mutual inductances
+
+    # finite element mesh -> sensor, coil -> sensor
+    probe_set_file = os.path.join(
+        working_directory, f"floops_{probe_details.attrs['probe_set_name']}.loc"
+    )
+    Msensor, Msc, sensor_obj = tw_model.compute_Msensor(probe_set_file)
+
+    # filament -> finite element mesh
+    Mc = tw_model.compute_Mcoil()
+
+    # Build inductance matrix
+    tw_model.compute_Lmat(
+        use_hodlr=True,
+    )
+    tw_model.compute_Rmat()
+
+    # Build driver from filaments
+    filament_details = tracer.get_filament_ds(
+        num_filaments=Mc.shape[0], coordinate_system="cartesian"
+    )
+    filament_currents = (
+        filament_details.current.values
+    )  # Complex array for rotating wave
+
+    # Driver represents the complex phasor: real and imaginary parts
+    driver = np.zeros((2, tw_model.nelems))
+    driver[0, :] = np.dot(filament_currents.real, Mc)
+    driver[1, :] = np.dot(filament_currents.imag, Mc)
+
+    # Calculate mesh response at given frequency
+    mesh_response_matrix = tw_model.compute_freq_response(fdriver=driver, freq=freq)
+
+    # Contribution from mesh current to the sensor
+    vessel_response_matrix = np.dot(mesh_response_matrix, Msensor)
+    vessel_response = vessel_response_matrix[0, :] + 1j * vessel_response_matrix[1, :]
+
+    # Contribution from filament current directly to the sensor
+    # This is the mutual inductance flux: Phi = M * I (both are complex)
+    direct_response = np.dot(filament_currents, Msc)
+
+    total_response = direct_response + vessel_response
+
+    tw_model.save_current(mesh_response_matrix[0, :], "Jr_coil")
+    tw_model.save_current(mesh_response_matrix[1, :], "Ji_coil")
+    tw_model.build_XDMF()
+
+    return total_response, direct_response, vessel_response
 
 
 ################################################################################################
 ################################################################################################
-def get_mesh(mesh_file, working_files_directory, n_threads, sensor_set, debug=True):
+def get_mesh(mesh_file, working_directory, n_threads, sensor_set, debug=True):
     # Load mesh, compute inductance matrices
 
     if debug:
@@ -20,8 +107,8 @@ def get_mesh(mesh_file, working_files_directory, n_threads, sensor_set, debug=Tr
     oft_env = OFT_env(nthreads=os.cpu_count() if n_threads == 0 else n_threads)
     tw_mesh = ThinCurr(oft_env)
     tw_mesh.setup_model(
-        mesh_file=working_files_directory + mesh_file,
-        xml_filename=working_files_directory + "oft_in.xml",
+        mesh_file=working_directory + mesh_file,
+        xml_filename=working_directory + "oft_in.xml",
     )
     tw_mesh.setup_io()
 
@@ -63,7 +150,7 @@ def run_frequency_scan(
     mesh_file,
     sensor_obj,
     mode,
-    working_files_directory,
+    working_directory,
     coil_current_magnitude=1,
 ):
     Mcoil = tw_mesh.compute_Mcoil()
@@ -72,8 +159,7 @@ def run_frequency_scan(
 
     # Mutual between the mesh and sensors, and coil and sensors
     Msensor, Msc, _ = tw_mesh.compute_Msensor(
-        working_files_directory
-        + "floops_%s.loc" % probe_details.attrs["probe_set_name"]
+        working_directory + "floops_%s.loc" % probe_details.attrs["probe_set_name"]
     )
 
     # Test one frequency
@@ -135,7 +221,7 @@ def makePlots(
     debug=True,
     plotParams={"clim_J": [0, 1]},
     doPlot=True,
-    working_files_directory="",
+    working_directory="",
 ):
     # Generate plots of mesh, filaments, sensors, and currents
     # Will plot induced current on the mesh if plot_B_surf is True
@@ -211,7 +297,7 @@ def makePlots(
 
         tmp.append(pts)
     if debug:
-        print("Plotted Fillaments")
+        print("Plotted filaments")
 
     ###################################################
     # Plot Sensors
@@ -227,7 +313,7 @@ def makePlots(
     if debug:
         print("Plotted Sensors")
     if doSave:
-        p.save_graphic(working_files_directory + "Mesh_and_Filaments%s.pdf" % save_Ext)
+        p.save_graphic(working_directory + "Mesh_and_Filaments%s.pdf" % save_Ext)
     if debug:
         print("Saved figure")
     p.show()
@@ -247,7 +333,7 @@ def correct_frequency_response(
     mode,
     doSave,
     debug,
-    working_files_directory,
+    working_directory,
     probe_details,
     save_Ext,
 ):
@@ -264,7 +350,7 @@ def correct_frequency_response(
 
     if doSave:
         sensors_bode.to_netcdf(
-            working_files_directory
+            working_directory
             + "probe_signals_%s_m%02d_n%02d_f%1.1ekHz%s.nc"
             % (
                 probe_details.attrs["probe_set_name"],
@@ -279,7 +365,7 @@ def correct_frequency_response(
             print(
                 "Saved probe signals to %s"
                 % (
-                    working_files_directory
+                    working_directory
                     + "probe_signals_%s_m%02d_n%02d_f%1.1ekHz%s.nc"
                     % (
                         probe_details.attrs["probe_set_name"],

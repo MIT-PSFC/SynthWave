@@ -18,3 +18,14 @@ def cartesian_to_cylindrical(x: float, y: float, z: float) -> np.ndarray:
 def phi_domain(phi: np.ndarray) -> np.ndarray:
     """Ensure phi is in the range [0, 2*pi)"""
     return np.mod(phi, 2 * np.pi)
+
+
+def angle_domain(phase: np.ndarray) -> np.ndarray:
+    """Ensure phase is in the range [-pi, pi), to match np.angle output"""
+    return np.angle(np.exp(1j * phase))
+
+
+def wrapped_diff(phase1: np.ndarray, phase2: np.ndarray) -> np.ndarray:
+    """Compute the wrapped difference between two phases."""
+    diff = phase1 - phase2
+    return angle_domain(diff)

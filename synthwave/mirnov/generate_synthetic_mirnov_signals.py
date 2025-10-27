@@ -7,10 +7,8 @@ and a mode to simulate (m,n)
 and a resistivity for the conducting structure
 and a frequency to simulate
 
-Outputs a netcdf file with the real and imaginary components of the probe signals in [T/s]
+Outputs a netcdf file with the real and imaginary components of the probe signals in [T]
 and optional plots of the mesh, filaments, and sensors
-
-Beta version
 
 Original by Rian Chandra,
 Modified by Zander Keith
@@ -19,17 +17,15 @@ Modified by Zander Keith
 import os
 import numpy as np
 import xarray as xr
+from typing import Optional
 from freeqdsk import geqdsk
 from synthwave import PACKAGE_ROOT
 
-from synthwave.mirnov.prep_thincurr_input import (
-    gen_coil_currs_sin_cos,
-    gen_filament_coords,
-    calc_filament_coords_field_lines,
-    gen_OFT_sensors_file,
-    gen_OFT_filement_and_eta_file,
-)
+from synthwave.magnetic_geometry.filaments import FilamentTracer
 
+from synthwave.mirnov.prep_thincurr_input import (
+    gen_OFT_sensors_file,
+)
 
 from synthwave.mirnov.run_thincurr_model import (
     get_mesh,
@@ -37,6 +33,42 @@ from synthwave.mirnov.run_thincurr_model import (
     makePlots,
     correct_frequency_response,
 )
+
+
+def synthetic_mirnov_signal(
+    probe_details: xr.Dataset,
+    tracer: FilamentTracer,
+    freq: float,
+    working_directory: str,
+    mesh_file: Optional[str] = None,
+    vessel_resistivity: Optional[float] = 1e-6,
+    debug: Optional[bool] = False,
+) -> xr.Dataset:
+    """
+    Calculate the real and imaginary components of the magnetic probe signals using ThinCurr.
+    If a mesh_file is not provided, does not include the conducting structure effects.
+
+    Args:
+        probe_details (xr.Dataset): Dataset containing probe geometry in X,Y,Z coordinate, orientation in theta, phi,
+        filament (BaseFilament): Filament object defining the mode to simulate
+        freq (float): Frequency of the mode to simulate
+        working_directory (str): Directory to write and load ThinCurr files
+        mesh_file (Optional[str]): Path to the vessel model file for ThinCurr
+        vessel_resistivity (Optional[float], default=1e-6): Resistivity of the conducting structure in Ohm-m
+        debug (Optional[bool], default=False): If True, print debug information
+
+    Returns:
+        xr.Dataset: Dataset containing the simulated probe signals in [T/s].
+    """
+
+    # Prepare filament currents and put them in OFT format
+    # https://openfusiontoolkit.github.io/OpenFUSIONToolkit/docs/v1.0.0-beta6/doc_tw_main.html#doc_tw_main_filament
+
+    # Prepare sensors in OFT format
+
+    # Prepare ThinCurr Model, get finite element Mesh
+
+    # Calculate frequency response
 
 
 ################################################################################################
@@ -48,7 +80,7 @@ def thincurr_synthetic_mirnov_signal(
     freq: float,
     mode: dict,
     eta: list[float],
-    working_files_directory: str,
+    working_directory: str,
     save_Ext: str = "",
     debug: bool = False,
     n_threads: int = 0,
@@ -75,7 +107,7 @@ def thincurr_synthetic_mirnov_signal(
         doPlot: If True, generate debug plots of the mesh, filaments, and sensors
         doSave: If True, save the output dataset to a netcdf file
         plotParams: Dictionary with plotting parameters, e.g. {'clim_J': [0, 0.5]} for color limits of eddy current plot
-        working_files_directory: Directory to store and load mesh and temporary files from
+        working_directory: Directory to store and load mesh and temporary files from
     Returns:
         xr.Dataset: Dataset containing the simulated probe signals in [T/s].
     """
@@ -84,30 +116,20 @@ def thincurr_synthetic_mirnov_signal(
     # Prepare filament currents, locations
 
     # Generate coil currents (for artificial mode)
-    coil_currs = gen_coil_currs_sin_cos(mode)
-
-    # Get starting coorindates for fillaments
-    theta, phi = gen_filament_coords(mode)
-
-    filament_coords = calc_filament_coords_field_lines(
-        mode, eqdsk, working_files_directory, doDebug=debug
-    )
-
-    # Put filamanets in OFT file format
-    gen_OFT_filement_and_eta_file(working_files_directory, filament_coords, eta)
 
     ######################################################################################
     # Generate sensors in OFT format
-    sensors = gen_OFT_sensors_file(probe_details, working_files_directory, debug=debug)
+    sensors = gen_OFT_sensors_file(probe_details, working_directory, debug=debug)
 
     ######################################################################################
     # Prepare ThinCurr Model, Get finite element Mesh
     tw_mesh, sensor_obj, Mc = get_mesh(
-        mesh_model_file, working_files_directory, n_threads, sensor_set, debug=debug
+        mesh_model_file, working_directory, n_threads, sensor_set, debug=debug
     )
 
     ######################################################################################
     # Calculate frequency response
+    coil_currs = None
     sensors_bode = run_frequency_scan(
         tw_mesh,
         freq,
@@ -116,7 +138,7 @@ def thincurr_synthetic_mirnov_signal(
         mesh_model_file,
         sensor_obj,
         mode,
-        working_files_directory,
+        working_directory,
     )
 
     # Correct for sensor frequency response and save results
@@ -127,7 +149,7 @@ def thincurr_synthetic_mirnov_signal(
         mode,
         doSave,
         debug,
-        working_files_directory,
+        working_directory,
         probe_details,
         save_Ext,
     )
@@ -135,6 +157,7 @@ def thincurr_synthetic_mirnov_signal(
     ######################################################################################
     # Optional debug output
     # Plot mesh, filaments, sensors, and currents
+    filament_coords = None
     makePlots(
         tw_mesh,
         mode,
@@ -147,7 +170,7 @@ def thincurr_synthetic_mirnov_signal(
         debug=debug,
         plotParams=plotParams,
         doPlot=doPlot,
-        working_files_directory=working_files_directory,
+        working_directory=working_directory,
     )
 
     ######################################################################################
@@ -164,8 +187,8 @@ if __name__ == "__main__":
     # Load example probe details
     probe_details_file = os.path.join(
         PACKAGE_ROOT,
-        "synthetic_mirnov",
         "input_data",
+        "cmod",
         f"sensor_details_{sensor_set}.nc",
     )
     probe_details = xr.load_dataset(probe_details_file)
@@ -220,7 +243,7 @@ if __name__ == "__main__":
 
     ###################
     debug = True
-    working_files_directory = "input_data/"
+    working_directory = "input_data/"
     save_Ext = "_CMod"
     n_threads = 12
     doSave = True
@@ -235,7 +258,7 @@ if __name__ == "__main__":
         freq,
         mode,
         eta,
-        working_files_directory=working_files_directory,
+        working_directory=working_directory,
         save_Ext=save_Ext,
         debug=debug,
         n_threads=n_threads,
