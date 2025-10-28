@@ -1,3 +1,4 @@
+from fractions import Fraction
 import pytest
 import numpy as np
 import os
@@ -200,32 +201,11 @@ class TestToroidalFilamentTracer:
         for tick in x_ticks:
             # Convert to fraction of pi
             ratio = tick / np.pi
-            if ratio == 0:
-                x_labels.append('0')
-            elif ratio == 0.5:
-                x_labels.append(r'$\pi/2$')
-            elif ratio == 1:
-                x_labels.append(r'$\pi$')
-            elif ratio == 1.5:
-                x_labels.append(r'$3\pi/2$')
-            elif ratio == 2:
-                x_labels.append(r'$2\pi$')
-            elif ratio == 2.5:
-                x_labels.append(r'$5\pi/2$')
-            elif ratio == 3:
-                x_labels.append(r'$3\pi$')
-            elif ratio == 3.5:
-                x_labels.append(r'$7\pi/2$')
-            elif ratio == 4:
-                x_labels.append(r'$4\pi$')
+            frac = Fraction(int(ratio * 2), 2).limit_denominator()
+            if frac.denominator == 1:
+                x_labels.append(f'${frac.numerator}\pi$')
             else:
-                # For other values, format as fraction
-                from fractions import Fraction
-                frac = Fraction(int(ratio * 2), 2).limit_denominator()
-                if frac.denominator == 1:
-                    x_labels.append(f'${frac.numerator}\pi$')
-                else:
-                    x_labels.append(f'${frac.numerator}\pi/{frac.denominator}$')
+                x_labels.append(f'${frac.numerator}\pi/{frac.denominator}$')
 
         # Plot real component of current
         scatter1 = ax1.scatter(
@@ -353,38 +333,25 @@ class TestEquilibriumFilamentTracer:
 
         # Create x-axis ticks that span the entire phi domain
         # Number of ticks based on the range (use pi/2 increments)
-        num_x_ticks = int(np.ceil(phi_max / (np.pi/2))) + 1
-        x_ticks = [i * np.pi/2 for i in range(num_x_ticks)]
+        # Calculate starting and ending tick indices to handle negative phi values
+        start_tick_idx = int(np.floor(phi_min / (np.pi/2)))
+        end_tick_idx = int(np.ceil(phi_max / (np.pi/2)))
+        x_ticks = [i * np.pi/2 for i in range(start_tick_idx, end_tick_idx + 1)]
         x_labels = []
         for tick in x_ticks:
             # Convert to fraction of pi
             ratio = tick / np.pi
-            if ratio == 0:
-                x_labels.append('0')
-            elif ratio == 0.5:
-                x_labels.append(r'$\pi/2$')
-            elif ratio == 1:
-                x_labels.append(r'$\pi$')
-            elif ratio == 1.5:
-                x_labels.append(r'$3\pi/2$')
-            elif ratio == 2:
-                x_labels.append(r'$2\pi$')
-            elif ratio == 2.5:
-                x_labels.append(r'$5\pi/2$')
-            elif ratio == 3:
-                x_labels.append(r'$3\pi$')
-            elif ratio == 3.5:
-                x_labels.append(r'$7\pi/2$')
-            elif ratio == 4:
-                x_labels.append(r'$4\pi$')
-            else:
-                # For other values, format as fraction
-                from fractions import Fraction
-                frac = Fraction(int(ratio * 2), 2).limit_denominator()
-                if frac.denominator == 1:
+            frac = Fraction(int(ratio * 2), 2).limit_denominator()
+            if frac.denominator == 1:
+                if frac.numerator > 0:
                     x_labels.append(f'${frac.numerator}\pi$')
                 else:
+                    x_labels.append(f'${frac.numerator}\pi$')
+            else:
+                if frac.numerator > 0:
                     x_labels.append(f'${frac.numerator}\pi/{frac.denominator}$')
+                else:
+                    x_labels.append(f'$-{abs(frac.numerator)}\pi/{frac.denominator}$')
 
         # Plot real component of current
         scatter1 = ax1.scatter(
