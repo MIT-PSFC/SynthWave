@@ -7,6 +7,7 @@ import os
 import matplotlib.pyplot as plt
 from synthwave.magnetic_geometry.filaments import FilamentTracer
 from typing import Optional
+import vtk
 
 
 def calc_frequency_response(
@@ -16,6 +17,7 @@ def calc_frequency_response(
     mesh_file: str,
     working_directory: str,
     n_threads: Optional[int] = None,
+    debug_plot_path: Optional[str] = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Calculate the measured frequency response at the given probes due to filaments defined by the tracer.
@@ -90,9 +92,78 @@ def calc_frequency_response(
 
     total_response = direct_response + vessel_response
 
-    tw_model.save_current(mesh_response_matrix[0, :], "Jr_coil")
-    tw_model.save_current(mesh_response_matrix[1, :], "Ji_coil")
-    tw_model.build_XDMF()
+    if debug_plot_path is not None:
+        # Only plotting to file, don't try to use a display
+        pyvista.OFF_SCREEN = True
+        vtk.vtkLogger.SetStderrVerbosity(vtk.vtkLogger.VERBOSITY_OFF)
+        tw_model.save_current(mesh_response_matrix[0, :], "Jr_coil")
+        tw_model.save_current(mesh_response_matrix[1, :], "Ji_coil")
+        plot_data = tw_model.build_XDMF()
+
+        grid = plot_data["ThinCurr"]["smesh"].get_pyvista_grid()
+        Jfull = plot_data["ThinCurr"]["smesh"].get_field("Jr_coil")
+
+        pyvista.global_theme.allow_empty_mesh = True
+        plotter = pyvista.Plotter()
+
+        # Plot vessel mesh with eddy currents
+        plotter.add_mesh(
+            grid,
+            color=[0, 0, 0, 0],
+            opacity=0.8,
+            show_edges=True,
+            scalars=Jfull,
+            clim=[0, np.max(np.abs(Jfull))],
+            smooth_shading=True,
+            scalar_bar_args={"title": "Eddy Current [A/m]"},
+        )
+
+        # Save vessel mesh plot
+        plotter.save_graphic(f"{debug_plot_path}_vessel.svg")
+
+        # Plot some filaments
+        for ind, filament in enumerate(tracer.get_filament_list(num_filaments=6)):
+            filament_spline = pyvista.Spline(filament, len(filament))
+
+            plotter.add_mesh(
+                filament_spline,
+                color=plt.get_cmap("plasma")(
+                    (filament_currents.real[ind] / np.max(filament_currents.real) + 1)
+                    / 2
+                ),
+                line_width=6,
+                render_points_as_spheres=True,
+                label="Filament" if ind == 0 else None,
+                opacity=1,
+            )
+
+        # Plot sensors
+        for sensor in probe_details.sensor:
+            sensor_data = probe_details.sel(sensor=sensor)
+            sensor_point = sensor_data.position.data
+            plotter.add_points(
+                sensor_point,
+                color="k",
+                point_size=10,
+                render_points_as_spheres=True,
+                label="Mirnov" if ind == 0 else None,
+            )
+        plotter.add_legend()
+        plotter.save_graphic(f"{debug_plot_path}_filaments.svg")
+
+        # Have the view be top-down
+        plotter.view_xy()
+        plotter.save_graphic(f"{debug_plot_path}_topdown.svg")
+
+        # Have the view be a slice through the xz plane
+        plotter.camera_position = [
+            (0, -0.1, 0),  # Position of the camera, set a little back on y-axis
+            (0, 0, 0),  # Focal point at the origin
+            (0, 0, 1),  # View up direction along z-axis
+        ]
+        plotter.save_graphic(f"{debug_plot_path}_xzplane.svg")
+
+        plotter.close()
 
     return total_response, direct_response, vessel_response
 

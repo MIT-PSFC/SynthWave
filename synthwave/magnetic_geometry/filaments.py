@@ -277,7 +277,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
             Number of points to trace around the filament
 
         """
-        super().__init__(m, n, num_points)
+        super().__init__(m, n, int(num_points))
         self.eq_field = eq_field
 
     def _trace(
@@ -294,16 +294,12 @@ class EquilibriumFilamentTracer(FilamentTracer):
         self.m_local = ratio.numerator
         self.n_local = ratio.denominator
 
-        num_points = (
-            num_filament_points * self.m_local
-        )  # Scale by m to get enough resolution for higher modes
-
         psi_q = self.eq_field.get_psi_of_q(self.m / self.n)
         # print(f"psi corresponding to q={self.m}/{self.n} is {psi_q}")
 
         # Use local n to ensure we don't wrap around the torus more than necessary
-        filament_etas = np.linspace(0, 2 * np.pi * self.n_local, num_points)
-        poloidal_points = np.zeros((num_points, 3))  # R, Z, a
+        filament_etas = np.linspace(0, 2 * np.pi * self.n_local, num_filament_points)
+        poloidal_points = np.zeros((num_filament_points, 3))  # R, Z, a
 
         # Start at the outboard midplane, slightly outside magnetic axis
         Z_start = self.eq_field.eqdsk.zmagx
