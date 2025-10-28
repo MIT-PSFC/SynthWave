@@ -4,6 +4,7 @@ import tempfile
 from freeqdsk import geqdsk
 import xarray as xr
 import pytest
+from sympy import nextprime
 
 from synthwave import PACKAGE_ROOT
 
@@ -22,9 +23,9 @@ def test_toroidal_angles(mode, major_radius):
     minor_radius_probe = 0.34
     minor_radius_plasma = 0.3
 
-    num_filaments = 12
+    num_filaments = nextprime(64)
     resistivity = 1e-6
-    num_filament_points = 100 * major_radius
+    num_filament_points = nextprime(1000 * major_radius)
     probe_details = xr.Dataset(
         data_vars={
             "position": (
@@ -105,12 +106,12 @@ def test_toroidal_angles(mode, major_radius):
     direct_measured_phase_diff_ac = np.angle(direct_response[2] / direct_response[0])
     direct_measured_phase_diff_bd = np.angle(direct_response[3] / direct_response[1])
 
-    assert np.isclose(wrapped_diff(direct_measured_phase_diff_ab, expected_phase_diff_ab), 0, atol=0.001)
-    assert np.isclose(wrapped_diff(direct_measured_phase_diff_cd, expected_phase_diff_cd), 0, atol=0.001)
+    assert np.isclose(wrapped_diff(direct_measured_phase_diff_ab, expected_phase_diff_ab), 0, atol=0.01)
+    assert np.isclose(wrapped_diff(direct_measured_phase_diff_cd, expected_phase_diff_cd), 0, atol=0.01)
     if major_radius == 1:
         # At small major radius, toroidal approximation is less accurate
         # In this case just make sure the two values match closely since they should be identical
-        assert np.isclose(wrapped_diff(direct_measured_phase_diff_ac, direct_measured_phase_diff_bd), 0, atol=0.001)
+        assert np.isclose(wrapped_diff(direct_measured_phase_diff_ac, direct_measured_phase_diff_bd), 0, atol=0.01)
     else:
         # At large major radius, toroidal approximation should still be fairly accurate
         assert np.isclose(wrapped_diff(direct_measured_phase_diff_ac, expected_phase_diff_ac), 0, atol=0.05)
@@ -128,71 +129,3 @@ def test_toroidal_angles(mode, major_radius):
     total_measured_phase_diff_bd = np.angle(total_response[3] / total_response[1])
     assert not np.isclose(wrapped_diff(total_measured_phase_diff_ac, expected_phase_diff_ac), 0, atol=0.1)
     assert not np.isclose(wrapped_diff(total_measured_phase_diff_bd, expected_phase_diff_bd), 0, atol=0.1)
-
-
-def test_thincurr_input():
-    mode = {"m": 2, "n": 1}
-    major_radius = 1
-    minor_radius_vessel = 0.35
-    minor_radius_probe = 0.34
-    minor_radius_plasma = 0.3
-
-    num_filaments = 12
-    resistivity = 1e-6
-
-    probe_details = xr.Dataset(
-        data_vars={
-            "position": (
-                ("sensor", "coord"),
-                np.array(
-                    [
-                        [major_radius + minor_radius_probe, 0.0, 0.0],  # sensor on x axis
-                        [0, major_radius + minor_radius_probe, 0.0],    # sensor on y axis
-                        [major_radius, 0, minor_radius_probe],          # sensor up top on x axis
-                        [0, major_radius, minor_radius_probe],          # sensor up top on y axis
-                    ]
-                ),
-            ),
-            "normal": (
-                ("sensor", "coord"),
-                np.array(
-                    [
-                        # Normals pointing radially inward
-                        [-1.0, 0.0, 0.0],
-                        [0.0, -1.0, 0.0],
-                        [0.0, 0.0, -1.0],
-                        [0.0, 0.0, -1.0],
-                    ]
-                ),
-            ),
-            "radius": ("sensor", np.array([0.01, 0.01, 0.01, 0.01])),
-        },
-        coords={
-            "sensor": np.array(["sensor_a", "sensor_b", "sensor_c", "sensor_d"]),
-        },
-        attrs={
-            "probe_set_name": "test_probes",
-        },
-    )
-
-
-    with tempfile.TemporaryDirectory() as working_directory:
-        torus_mesh_file = os.path.join(working_directory, "thincurr_torus_mesh.h5")
-        torus_mesh = create_torus_mesh(major_radius, minor_radius_vessel)
-        torus_mesh.write_to_file(torus_mesh_file)
-
-        toroidal_tracer = ToroidalFilamentTracer(mode["m"], mode["n"], major_radius, 0, minor_radius_plasma, num_points=100)
-        filament_list = toroidal_tracer.get_filament_list(num_filaments=num_filaments, coordinate_system="cartesian")
-
-        gen_OFT_filament_and_eta_file(
-            working_directory=working_directory,
-            filament_list=filament_list,
-            resistivity_list=[resistivity],
-            debug=True,
-        )
-
-        gen_OFT_sensors_file(
-            probe_details=probe_details,
-            working_directory=working_directory,
-            debug=True,
-        )

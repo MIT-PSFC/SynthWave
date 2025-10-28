@@ -291,14 +291,11 @@ class EquilibriumFilamentTracer(FilamentTracer):
 
         # Correction for m/n as integer multiples (otherwise leads to ``wandering'' filaments)
         ratio = Fraction(self.m, self.n)
-        self.m_local = ratio.numerator
-        self.n_local = ratio.denominator
+        m_local = ratio.numerator
+        n_local = ratio.denominator
+        psi_q = self.eq_field.get_psi_of_q(m_local / n_local)
 
-        psi_q = self.eq_field.get_psi_of_q(self.m / self.n)
-        # print(f"psi corresponding to q={self.m}/{self.n} is {psi_q}")
-
-        # Use local n to ensure we don't wrap around the torus more than necessary
-        filament_etas = np.linspace(0, 2 * np.pi * self.n_local, num_filament_points)
+        filament_etas = np.linspace(0, 2 * np.pi, num_filament_points)
         poloidal_points = np.zeros((num_filament_points, 3))  # R, Z, a
 
         # Start at the outboard midplane, slightly outside magnetic axis
@@ -311,7 +308,6 @@ class EquilibriumFilamentTracer(FilamentTracer):
             maxiter=800,
             tol=1e-3,
         )
-        # print(f"Starting point for tracing: R={R_start}, Z={Z_start}")
 
         # Sliding along minor radius a to meet the rational surface
         def _R_a(eta, a):
@@ -357,12 +353,12 @@ class EquilibriumFilamentTracer(FilamentTracer):
             # Circular cross section around the magnetic axis
             avg_minor_radius = np.mean(poloidal_points[:, 2])
             R = self.eq_field.eqdsk.rmagx + avg_minor_radius * np.cos(filament_etas)
-            phi = filament_etas * self.m / self.n
+            phi = filament_etas * m_local / n_local
             Z = self.eq_field.eqdsk.zmagx - avg_minor_radius * np.sin(filament_etas)
             filament_points = np.column_stack((R, phi, Z))
         elif method == EquilibriumFilamentTracer.TraceType.NAIVE:
             # Follows the rational surface but not the magnetic field
-            phi = filament_etas * self.m / self.n
+            phi = filament_etas * m_local / n_local
             filament_points = np.column_stack(
                 (poloidal_points[:, 0], phi, poloidal_points[:, 1])
             )
@@ -387,9 +383,10 @@ class EquilibriumFilamentTracer(FilamentTracer):
             # Numerical correction to ensure final point is at the proper angle
             # We can do this multiple times, whenever we know for sure that the phi is a multiple of pi * m / n
 
-            # RNC EDIT: Sign flip necessary to account for helicity direction
+            # RNC EDIT: Sign flip necessary to account for helicity direction,
+            # so known_phis matches the sign of the traced phi values
             known_phis = np.linspace(
-                0, 2 * np.pi * self.m_local, (2 * self.n_local) + 1
+                0, 2 * np.pi * m_local / n_local, (2 * n_local) + 1
             ) * np.sign(phi[-1])
             for i, known_phi_start in enumerate(known_phis[:-1]):
                 known_phi_end = known_phis[i + 1]
