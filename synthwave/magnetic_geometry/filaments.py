@@ -237,8 +237,8 @@ class ToroidalFilamentTracer(FilamentTracer):
             num_filament_points = self.num_points
 
         # Create a circular filament around the magnetic axis
-        phi = np.linspace(0, 2 * np.pi * self.m / self.n, num_filament_points)
-        filament_etas = np.linspace(0, 2 * np.pi, num_filament_points)
+        phi = np.linspace(0, 2 * np.pi * self.m / self.n, int(num_filament_points))
+        filament_etas = np.linspace(0, 2 * np.pi, int(num_filament_points))
         R = self.R0 + self.a * np.cos(filament_etas)
         Z = self.Z0 + self.a * np.sin(filament_etas)
 
