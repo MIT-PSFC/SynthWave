@@ -43,11 +43,11 @@ def test_toroidal_angles(mode, major_radius):
                 ("sensor", "coord"),
                 np.array(
                     [
-                        # Normals pointing radially inward
-                        [-1.0, 0.0, 0.0],
-                        [0.0, -1.0, 0.0],
-                        [0.0, 0.0, -1.0],
-                        [0.0, 0.0, -1.0],
+                        # Normals pointing radially outward
+                        [1.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0],
+                        [0.0, 0.0, 1.0],
+                        [0.0, 0.0, 1.0],
                     ]
                 ),
             ),
