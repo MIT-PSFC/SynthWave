@@ -137,12 +137,12 @@ def calc_frequency_response(
                 opacity=1,
             )
 
-        # Plot sensors
-        for sensor in probe_details.sensor:
-            sensor_data = probe_details.sel(sensor=sensor)
-            sensor_point = sensor_data.position.data
+        # Plot probes
+        for probe in probe_details.probe:
+            probe_data = probe_details.sel(probe=probe)
+            probe_point = probe_data.position.data
             plotter.add_points(
-                sensor_point,
+                probe_point,
                 color="k",
                 point_size=10,
                 render_points_as_spheres=True,

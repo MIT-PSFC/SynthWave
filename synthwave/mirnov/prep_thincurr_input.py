@@ -61,6 +61,7 @@ def gen_OFT_sensors_file(
 ):
     """
     Write probe details to OFT format file for ThinCurr
+    OFT calls them sensors, but the more common terminology is probes.
 
     Args:
         probe_details (xr.Dataset): Dataset containing probe location and normal orientation in x,y,z
@@ -71,19 +72,19 @@ def gen_OFT_sensors_file(
     # X, Y, Z (coordinates of each probe)
     # theta, phi (orientation of each probe)
 
-    sensor_list = []
-    for probe in probe_details.sensor.values:
-        pt = probe_details.position.sel(sensor=probe).values
+    probe_list = []
+    for probe in probe_details.probe.values:
+        pt = probe_details.position.sel(probe=probe).values
         # normal vector does not current account for toroidal tilt
-        norm = probe_details.normal.sel(sensor=probe).values
+        norm = probe_details.normal.sel(probe=probe).values
         # Probe radius
-        dx = probe_details.radius.sel(sensor=probe).item()
+        dx = probe_details.radius.sel(probe=probe).item()
         # create Mirnov object
-        sensor_list.append(Mirnov(pt, norm, probe, dx))
+        probe_list.append(Mirnov(pt, norm, probe, dx))
 
     # Save in ThinCurr format
     save_sensors(
-        sensor_list,
+        probe_list,
         f"{working_directory}/floops_{probe_details.attrs['probe_set_name']}.loc",
     )
     if debug:
@@ -91,4 +92,4 @@ def gen_OFT_sensors_file(
             "Wrote OFT sensor file to %s/floops_%s.loc"
             % (working_directory, probe_details.attrs["probe_set_name"])
         )
-    return sensor_list
+    return probe_list
