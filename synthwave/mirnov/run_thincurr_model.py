@@ -110,6 +110,7 @@ def calc_frequency_response(
         plotter.add_mesh(
             grid,
             color=[0, 0, 0, 0],
+            use_transparency=True,
             opacity=0.8,
             show_edges=True,
             scalars=Jfull,
@@ -119,7 +120,7 @@ def calc_frequency_response(
         )
 
         # Save vessel mesh plot
-        plotter.save_graphic(f"{debug_plot_path}_vessel.svg")
+        plotter.screenshot(f"{debug_plot_path}_vessel.png", transparent_background=True)
 
         # Plot some filaments
         for ind, filament in enumerate(tracer.get_filament_list(num_filaments=6)):
@@ -149,11 +150,15 @@ def calc_frequency_response(
                 label="Mirnov" if ind == 0 else None,
             )
         plotter.add_legend()
-        plotter.save_graphic(f"{debug_plot_path}_filaments.svg")
+        plotter.screenshot(
+            f"{debug_plot_path}_filaments.png", transparent_background=True
+        )
 
         # Have the view be top-down
         plotter.view_xy()
-        plotter.save_graphic(f"{debug_plot_path}_topdown.svg")
+        plotter.screenshot(
+            f"{debug_plot_path}_topdown.png", transparent_background=True
+        )
 
         # Have the view be a slice through the xz plane
         plotter.camera_position = [
@@ -161,7 +166,9 @@ def calc_frequency_response(
             (0, 0, 0),  # Focal point at the origin
             (0, 0, 1),  # View up direction along z-axis
         ]
-        plotter.save_graphic(f"{debug_plot_path}_xzplane.svg")
+        plotter.screenshot(
+            f"{debug_plot_path}_xzplane.png", transparent_background=True
+        )
 
         plotter.close()
 
