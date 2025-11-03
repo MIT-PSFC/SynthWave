@@ -145,7 +145,7 @@ class FilamentTracer(ABC):
         num_filaments: int,
         num_filament_points: Optional[int] = None,
         coordinate_system: str = "cartesian",
-    ) -> list[np.ndarray]:
+    ) -> tuple[list[np.ndarray], list[float]]:
         """Generate a list of filaments, each represented as an array of shape (N, 3) in cylindrical coordinates.
 
         Args:
@@ -154,7 +154,8 @@ class FilamentTracer(ABC):
             coordinate_system (str, default = "cartesian"): Coordinate system for output points. Options are "cylindrical" or "cartesian".
 
         Returns:
-            list[np.ndarray]: List of filaments, each of shape (N, 3) with columns [R, phi, Z].
+            list[np.ndarray]: List of filaments, each of shape (N, 3) with columns [x, y, z] or [R, phi, Z].
+            list[float]: List of filament currents.
         """
         if num_filaments <= 0:
             raise ValueError("num_filaments must be a positive integer")
@@ -185,7 +186,9 @@ class FilamentTracer(ABC):
                 filament_array = np.array([x, y, z]).T
             filament_list.append(filament_array)
 
-        return filament_list
+        current_list = filament_points_ds["current"].values.tolist()
+
+        return filament_list, current_list
 
     def make_filament_spline(self):
         """Create a spline which puts eta in terms of phi for this filament."""

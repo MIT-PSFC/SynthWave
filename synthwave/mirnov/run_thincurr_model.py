@@ -123,18 +123,17 @@ def calc_frequency_response(
         plotter.screenshot(f"{debug_plot_path}_vessel.png", transparent_background=True)
 
         # Plot some filaments
-        for ind, filament in enumerate(tracer.get_filament_list(num_filaments=6)):
+        plot_filaments, plot_currents = tracer.get_filament_list(num_filaments=6)
+        for filament, current in zip(plot_filaments, plot_currents):
             filament_spline = pyvista.Spline(filament, len(filament))
 
             plotter.add_mesh(
                 filament_spline,
                 color=plt.get_cmap("plasma")(
-                    (filament_currents.real[ind] / np.max(filament_currents.real) + 1)
-                    / 2
+                    (current.real / np.max(np.array(plot_currents).real) + 1) / 2
                 ),
                 line_width=6,
                 render_points_as_spheres=True,
-                label="Filament" if ind == 0 else None,
                 opacity=1,
             )
 
@@ -147,9 +146,7 @@ def calc_frequency_response(
                 color="k",
                 point_size=10,
                 render_points_as_spheres=True,
-                label="Mirnov" if ind == 0 else None,
             )
-        plotter.add_legend()
         plotter.screenshot(
             f"{debug_plot_path}_filaments.png", transparent_background=True
         )

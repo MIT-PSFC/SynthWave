@@ -4,10 +4,13 @@ import numpy as np
 import os
 import tempfile
 
+import pyvista
+pyvista.OFF_SCREEN = True
+
 from synthwave import PACKAGE_ROOT
 import freeqdsk
 
-from synthwave.magnetic_geometry.filaments import ToroidalFilamentTracer, EquilibriumFilamentTracer
+from synthwave.magnetic_geometry.filaments import FilamentTracer, ToroidalFilamentTracer, EquilibriumFilamentTracer
 from synthwave.magnetic_geometry.equilibrium_field import EquilibriumField
 import matplotlib.pyplot as plt
 
@@ -169,7 +172,7 @@ class TestToroidalFilamentTracer:
         """Test get_filament_ds method for correct output dataset."""
         major_radius = 1
         minor_radius = 0.3
-        num_filaments = 24
+        num_filaments = 6
 
         fig_dir = os.path.join(self.fig_dir, "test_points_and_currents")
         if not os.path.exists(fig_dir):
@@ -268,7 +271,72 @@ class TestToroidalFilamentTracer:
         fig.savefig(fig_path, dpi=150)
         print(f'Saved filament current plot for mode m={mode["m"]}, n={mode["n"]} to {fig_path}')
 
-            
+    @pytest.mark.parametrize("mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": -3, "n": 2}, {"m": 3, "n": 1}, {"m": 4, "n": 3}])
+    def test_points_and_currents_3d(self, mode):
+        major_radius = 1
+        minor_radius = 0.3
+        num_filaments = 6
+
+        fig_dir = os.path.join(self.fig_dir, "test_points_and_currents_3d")
+        if not os.path.exists(fig_dir):
+            os.makedirs(fig_dir)
+
+        toroidal_tracer = ToroidalFilamentTracer(
+            mode["m"], mode["n"], major_radius, 0, minor_radius, num_points=100
+        )
+
+        filament_ds = toroidal_tracer.get_filament_ds(num_filaments=num_filaments, coordinate_system="cartesian")
+
+        # Create 3D plot of filament traces
+        fig = plt.figure(figsize=(14, 10))
+        ax = fig.add_subplot(111, projection='3d')
+
+        # Extract data
+        X = filament_ds["x"].values  # Shape: (num_filaments, num_points)
+        Y = filament_ds["y"].values  # Shape: (num_filaments, num_points)
+        Z = filament_ds["z"].values  # Shape: (num_filaments, num_points)
+        currents = filament_ds["current"].values  # Shape: (num_filaments
+
+        # Plot each filament with color based on real component of current
+        norm = plt.Normalize(vmin=currents.real.min(), vmax=currents.real.max())
+        cmap = plt.cm.viridis
+
+        for i in range(num_filaments):
+            color = cmap(norm(currents.real[i]))
+            ax.plot(X[i, :], Y[i, :], Z[i, :],
+                   color=color, linewidth=4, alpha=0.7)
+
+        # Add colorbar
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        cbar = plt.colorbar(sm, ax=ax, pad=0.1, shrink=0.8)
+        cbar.set_label('|I| (Real component of current)', fontsize=12)
+
+        # Set labels and title
+        ax.set_xlabel('X [m]', fontsize=12)
+        ax.set_ylabel('Y [m]', fontsize=12)
+        ax.set_zlabel('Z [m]', fontsize=12)
+        ax.set_title(f'3D Filament Traces (m={mode["m"]}, n={mode["n"]})', fontsize=14)
+
+        # Make the aspect ratio equal on all 3 axes
+        max_range = np.array([X.max()-X.min(), Y.max()-Y.min(), Z.max()-Z.min()]).max() / 2.0
+        mid_x = (X.max()+X.min()) * 0.5
+        mid_y = (Y.max()+Y.min()) * 0.5
+        mid_z = (Z.max()+Z.min()) * 0.5
+        ax.set_xlim(mid_x - max_range, mid_x + max_range)
+        ax.set_ylim(mid_y - max_range, mid_y + max_range)
+        ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
+        # Set viewing angle
+        ax.view_init(elev=20, azim=45)
+
+        fig.tight_layout()
+        fig_path = os.path.join(fig_dir, f'm{mode["m"]}_n{mode["n"]}_3d.png')
+        fig.savefig(fig_path, dpi=150)
+        plt.close(fig)
+        print(f'Saved 3D filament trace plot for mode m={mode["m"]}, n={mode["n"]} to {fig_path}')
+
+
 class TestEquilibriumFilamentTracer:
     """Test the EquilibriumFilamentTracer class."""
 
@@ -410,6 +478,205 @@ class TestEquilibriumFilamentTracer:
         cbar2.set_label('Im(I)')
 
         fig.tight_layout()
-        fig_path = os.path.join(fig_dir, f'm{mode["m"]}_n{mode["n"]}.png')  
+        fig_path = os.path.join(fig_dir, f'm{mode["m"]}_n{mode["n"]}.png')
         fig.savefig(fig_path, dpi=150)
         print(f'Saved filament current plot for mode m={mode["m"]}, n={mode["n"]} to {fig_path}')
+
+    @pytest.mark.parametrize("mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": 3, "n": 1}, {"m": 4, "n": 3}])
+    def test_points_and_currents_3d(self, mode):
+        """Test get_filament_ds method and create 3D visualization of filament traces."""
+
+        eq_field = EquilibriumField(self.eqdsk)
+        num_filaments = 6
+
+        fig_dir = os.path.join(self.fig_dir, "test_points_and_currents_3d")
+        if not os.path.exists(fig_dir):
+            os.makedirs(fig_dir)
+
+        equilibrium_tracer = EquilibriumFilamentTracer(
+            mode["m"], mode["n"], eq_field, num_points=200
+        )
+
+        filament_ds = equilibrium_tracer.get_filament_ds(num_filaments=num_filaments, coordinate_system="cartesian")
+
+        # Create 3D plot of filament traces
+        fig = plt.figure(figsize=(14, 10))
+        ax = fig.add_subplot(111, projection='3d')
+
+        X = filament_ds["x"].values  # Shape: (num_filaments, num_points)
+        Y = filament_ds["y"].values  # Shape: (num_filaments, num_points)
+        Z = filament_ds["z"].values  # Shape: (num_filaments, num_points)
+        currents = filament_ds["current"].values  # Shape: (num_filaments,)
+
+        # Plot each filament with color based on current magnitude
+        norm = plt.Normalize(vmin=currents.real.min(), vmax=currents.real.max())
+        cmap = plt.cm.viridis
+
+        for i in range(num_filaments):
+            color = cmap(norm(currents[i].real))
+            ax.plot(X[i, :], Y[i, :], Z[i, :],
+                   color=color, linewidth=5, alpha=0.9)
+
+        # Add colorbar
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        cbar = plt.colorbar(sm, ax=ax, pad=0.1, shrink=0.8)
+        cbar.set_label('|I| (Current Real Part)', fontsize=12)
+
+        # Set labels and title
+        ax.set_xlabel('X [m]', fontsize=12)
+        ax.set_ylabel('Y [m]', fontsize=12)
+        ax.set_zlabel('Z [m]', fontsize=12)
+        ax.set_title(f'3D Equilibrium Filament Traces (m={mode["m"]}, n={mode["n"]})', fontsize=14)
+
+        # Make the aspect ratio equal on all 3 axes
+        max_range = np.array([X.max()-X.min(), Y.max()-Y.min(), Z.max()-Z.min()]).max() / 2.0
+        mid_x = (X.max()+X.min()) * 0.5
+        mid_y = (Y.max()+Y.min()) * 0.5
+        mid_z = (Z.max()+Z.min()) * 0.5
+        ax.set_xlim(mid_x - max_range, mid_x + max_range)
+        ax.set_ylim(mid_y - max_range, mid_y + max_range)
+        ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
+        # Set viewing angle
+        ax.view_init(elev=20, azim=45)
+
+        fig.tight_layout()
+        fig_path = os.path.join(fig_dir, f'm{mode["m"]}_n{mode["n"]}_3d.png')
+        fig.savefig(fig_path, dpi=150)
+        plt.close(fig)
+        print(f'Saved 3D equilibrium filament trace plot for mode m={mode["m"]}, n={mode["n"]} to {fig_path}')
+
+        # Another way of plotting filaments
+        plotter = pyvista.Plotter()
+
+        # Plot some filaments
+        for ind, filament in enumerate(equilibrium_tracer.get_filament_list(num_filaments=6)):
+            filament_spline = pyvista.Spline(filament, len(filament))
+
+            plotter.add_mesh(
+                filament_spline,
+                color=plt.get_cmap("plasma")(
+                    (currents.real[ind] / np.max(currents.real) + 1)
+                    / 2
+                ),
+                line_width=6,
+                render_points_as_spheres=True,
+                label="Filament" if ind == 0 else None,
+                opacity=1,
+            )
+
+        plotter.screenshot(os.path.join(fig_dir, f'm{mode["m"]}_n{mode["n"]}_3d_pyvista.png'))
+
+class TestAllFilamentTracers:
+    """Test common functionality for all filament tracers."""
+
+    fig_dir = os.path.join(FIG_DIR, "test_all_filament_tracers")
+
+    @pytest.mark.parametrize("tracer_class, tracer_args", [
+        (ToroidalFilamentTracer, (1.8, 0.0, 0.5, 400)),
+        (EquilibriumFilamentTracer, (EquilibriumField(TestEquilibriumFilamentTracer.eqdsk), 400))
+    ])
+    @pytest.mark.parametrize("mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}])
+    def test_closest_point_has_same_current(self, tracer_class: FilamentTracer, tracer_args, mode):
+        """Test that the closest point on the filament to a given point has the same current value."""
+        tracer_args = (mode["m"], mode["n"]) + tracer_args
+        tracer = tracer_class(*tracer_args)
+        filament_ds = tracer.get_filament_ds(num_filaments=6, coordinate_system="cartesian")
+
+        x_vals_all = filament_ds["x"].values
+        y_vals_all = filament_ds["y"].values
+        z_vals_all = filament_ds["z"].values
+
+        # For each filament, ensure the closest point to the start and the end has the same current
+        for i in range(filament_ds.dims["filament"]):
+            x_vals_filament = filament_ds["x"].values[i, :]
+            y_vals_filament = filament_ds["y"].values[i, :]
+            z_vals_filament = filament_ds["z"].values[i, :]
+            current = filament_ds["current"].values[i]
+
+            start_point = np.array([x_vals_filament[0], y_vals_filament[0], z_vals_filament[0]])
+            end_point = np.array([x_vals_filament[-1], y_vals_filament[-1], z_vals_filament[-1]])
+
+            # Compute distances to all points, except the start and end points on this filament
+            distances_start = np.sqrt(
+                (x_vals_all - start_point[0])**2 +
+                (y_vals_all - start_point[1])**2 +
+                (z_vals_all - start_point[2])**2
+            )
+            distances_end = np.sqrt(
+                (x_vals_all - end_point[0])**2 +
+                (y_vals_all - end_point[1])**2 +
+                (z_vals_all - end_point[2])**2
+            )
+            # Exclude start and end points of this filament
+            distances_start[i, 0] = np.inf
+            distances_start[i, -1] = np.inf
+            distances_end[i, -1] = np.inf
+            distances_end[i, 0] = np.inf
+
+            closest_start_point_idx = np.unravel_index(np.argmin(distances_start), distances_start.shape)
+            closest_end_point_idx = np.unravel_index(np.argmin(distances_end), distances_end.shape)
+
+            closest_start_current_idx = closest_start_point_idx[0]
+            closest_end_current_idx = closest_end_point_idx[0]
+
+            closest_start_current = filament_ds["current"].values[closest_start_current_idx]
+            closest_end_current = filament_ds["current"].values[closest_end_current_idx]
+
+            assert np.isclose(closest_start_current, current, rtol=1e-10)
+            assert np.isclose(closest_end_current, current, rtol=1e-10)
+
+    @pytest.mark.parametrize("tracer_class, tracer_args", [
+        (ToroidalFilamentTracer, (1.8, 0.0, 0.5, 400)),
+        (EquilibriumFilamentTracer, (EquilibriumField(TestEquilibriumFilamentTracer.eqdsk), 400))
+    ])
+    @pytest.mark.parametrize("mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}])
+    def test_closest_point_has_same_current_filament(self, tracer_class: FilamentTracer, tracer_args, mode):
+        """Test that the closest point on the filament to a given point has the same current value."""
+        tracer_args = (mode["m"], mode["n"]) + tracer_args
+        tracer = tracer_class(*tracer_args)
+        filament_ds = tracer.get_fila(num_filaments=10, coordinate_system="cartesian")
+
+        x_vals_all = filament_ds["x"].values
+        y_vals_all = filament_ds["y"].values
+        z_vals_all = filament_ds["z"].values
+
+        # For each filament, ensure the closest point to the start and the end has the same current
+        for i in range(filament_ds.dims["filament"]):
+            x_vals_filament = filament_ds["x"].values[i, :]
+            y_vals_filament = filament_ds["y"].values[i, :]
+            z_vals_filament = filament_ds["z"].values[i, :]
+            current = filament_ds["current"].values[i]
+
+            start_point = np.array([x_vals_filament[0], y_vals_filament[0], z_vals_filament[0]])
+            end_point = np.array([x_vals_filament[-1], y_vals_filament[-1], z_vals_filament[-1]])
+
+            # Compute distances to all points, except the start and end points on this filament
+            distances_start = np.sqrt(
+                (x_vals_all - start_point[0])**2 +
+                (y_vals_all - start_point[1])**2 +
+                (z_vals_all - start_point[2])**2
+            )
+            distances_end = np.sqrt(
+                (x_vals_all - end_point[0])**2 +
+                (y_vals_all - end_point[1])**2 +
+                (z_vals_all - end_point[2])**2
+            )
+            # Exclude start and end points of this filament
+            distances_start[i, 0] = np.inf
+            distances_start[i, -1] = np.inf
+            distances_end[i, -1] = np.inf
+            distances_end[i, 0] = np.inf
+
+            closest_start_point_idx = np.unravel_index(np.argmin(distances_start), distances_start.shape)
+            closest_end_point_idx = np.unravel_index(np.argmin(distances_end), distances_end.shape)
+
+            closest_start_current_idx = closest_start_point_idx[0]
+            closest_end_current_idx = closest_end_point_idx[0]
+
+            closest_start_current = filament_ds["current"].values[closest_start_current_idx]
+            closest_end_current = filament_ds["current"].values[closest_end_current_idx]
+
+            assert np.isclose(closest_start_current, current, rtol=1e-10)
+            assert np.isclose(closest_end_current, current, rtol=1e-10)
