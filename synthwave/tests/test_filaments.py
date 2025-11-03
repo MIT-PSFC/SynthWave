@@ -167,7 +167,7 @@ class TestToroidalFilamentTracer:
         np.testing.assert_allclose(distances_default, a, rtol=1e-10)
         np.testing.assert_allclose(distances_custom, a, rtol=1e-10)
 
-    @pytest.mark.parametrize("mode", [{"m": 1, "n": 1}, {"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": 3, "n": 1}, {"m": 4, "n": 3}, {"m": 5, "n": 4}])
+    @pytest.mark.parametrize("mode", [{"m": 1, "n": 1}, {"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": 3, "n": 1}, {"m": 4, "n": 3}, {"m": 5, "n": 4}, {"m": 4, "n": 1}, {"m": 5, "n": 1}])
     def test_points_and_currents(self, mode):
         """Test get_filament_ds method for correct output dataset."""
         major_radius = 1
@@ -370,7 +370,7 @@ class TestEquilibriumFilamentTracer:
         assert points.shape == (100, 3)
         assert etas.shape == (100,)
 
-    @pytest.mark.parametrize("mode", [{"m": 1, "n": 1}, {"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": 3, "n": 1}, {"m": 4, "n": 3}, {"m": 5, "n": 4}])
+    @pytest.mark.parametrize("mode", [{"m": 1, "n": 1}, {"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": 3, "n": 1}, {"m": 4, "n": 3}, {"m": 5, "n": 4}, {"m": 4, "n": 1}, {"m": 5, "n": 1}])
     def test_points_and_currents(self, mode):
         """Test get_filament_ds method for correct output dataset."""
 
