@@ -75,7 +75,7 @@ def gen_OFT_sensors_file(
     probe_list = []
     for probe in probe_details.probe.values:
         pt = probe_details.position.sel(probe=probe).values
-        # normal vector does not current account for toroidal tilt
+        # normal vector does not currently account for toroidal tilt
         norm = probe_details.normal.sel(probe=probe).values
         # Probe radius
         dx = probe_details.radius.sel(probe=probe).item()
