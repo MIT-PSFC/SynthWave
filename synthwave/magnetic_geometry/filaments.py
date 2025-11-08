@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 from scipy.interpolate import make_interp_spline
 from scipy.optimize import newton
+from sympy import nextprime
 from fractions import Fraction
 from synthwave.magnetic_geometry.utils import cylindrical_to_cartesian
 
@@ -16,49 +17,24 @@ from synthwave.magnetic_geometry.equilibrium_field import (
 class FilamentTracer(ABC):
     """Abstract class for filament representation."""
 
-    def __init__(self, m: int, n: int, num_points: Optional[int] = 1000):
+    def __init__(self, m: int, n: int, base_num_points: Optional[int] = 800):
         self.m = m
         self.n = n
-        self.num_points = num_points
-        self.traces = {}  # Dict to store traces of different numbers of points
+        self.num_points = nextprime(base_num_points * self.m / self.n)
 
     @abstractmethod
-    def _trace(
-        self, num_filament_points: Optional[int] = None
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Trace the filament and return the points in cylindrical coordinates (R, phi, Z) as well as the corresponding eta values.
-
-        Args:
-            num_filament_points (Optional[int]): Number of points to trace along the filament. If None, uses self.num_points.
-        Returns:
-            tuple[np.ndarray, np.ndarray]: Tuple containing:
-                - filament_points: Array of shape (N, 3) where each row is [R, phi, Z] in cylindrical coordinates.
-                - filament_etas: Array of shape (N,) containing the eta values corresponding to each point.
-        """
-
-    def trace(
-        self, num_filament_points: Optional[int] = None
-    ) -> tuple[np.ndarray, np.ndarray]:
+    def trace(self) -> tuple[np.ndarray, np.ndarray]:
         """Trace the filament and return the points in cylindrical coordinates (R, phi, Z), and the corresponding eta values."""
-        if num_filament_points in self.traces:
-            filament_points, filament_etas = self.traces[num_filament_points]
-        else:
-            filament_points, filament_etas = self._trace(num_filament_points)
-            self.traces[num_filament_points] = (filament_points, filament_etas)
-
-        return filament_points, filament_etas
 
     def get_filament_ds(
         self,
         num_filaments: int,
-        num_filament_points: Optional[int] = None,
         coordinate_system: Optional[str] = "cartesian",
     ) -> xr.Dataset:
         """Generate points and corresponding currents for multiple filaments.
 
         Args:
             num_filaments (int): How many individual filaments to create
-            num_filament_points (Optional[int], default = None): Number of points per filament. If None, uses self.num_points
             coordinate_system (Optional[str], default = "cartesian"): Coordinate system for output points. Options are "cylindrical", "cartesian", or "toroidal".
 
         Returns:
@@ -68,16 +44,13 @@ class FilamentTracer(ABC):
         if num_filaments <= 0:
             raise ValueError("num_filaments must be a positive integer")
 
-        if num_filament_points is None:
-            num_filament_points = self.num_points
-
         if coordinate_system not in ["cylindrical", "cartesian", "toroidal"]:
             raise ValueError(
                 "coordinate_system must be either 'cylindrical', 'cartesian', or 'toroidal'"
             )
 
         # Start with a filament that has zero toroidal offset
-        base_filament_points, filament_etas = self.trace(num_filament_points)
+        base_filament_points, filament_etas = self.trace()
 
         # Create toroidal offsets and corresponding currents
         starting_angles = np.linspace(0, 2 * np.pi, num_filaments, endpoint=False)
@@ -104,7 +77,7 @@ class FilamentTracer(ABC):
                 },
                 coords={
                     "filament": np.arange(num_filaments),
-                    "point": np.arange(num_filament_points),
+                    "point": np.arange(len(base_filament_points)),
                 },
             )
         elif coordinate_system == "cartesian":
@@ -122,7 +95,7 @@ class FilamentTracer(ABC):
                 },
                 coords={
                     "filament": np.arange(num_filaments),
-                    "point": np.arange(num_filament_points),
+                    "point": np.arange(len(base_filament_points)),
                 },
             )
         elif coordinate_system == "toroidal":
@@ -134,7 +107,7 @@ class FilamentTracer(ABC):
                 },
                 coords={
                     "filament": np.arange(num_filaments),
-                    "point": np.arange(num_filament_points),
+                    "point": np.arange(len(filament_etas)),
                 },
             )
 
@@ -143,7 +116,6 @@ class FilamentTracer(ABC):
     def get_filament_list(
         self,
         num_filaments: int,
-        num_filament_points: Optional[int] = None,
         coordinate_system: str = "cartesian",
     ) -> tuple[list[np.ndarray], list[float]]:
         """Generate a list of filaments, each represented as an array of shape (N, 3) in cylindrical coordinates.
@@ -160,17 +132,12 @@ class FilamentTracer(ABC):
         if num_filaments <= 0:
             raise ValueError("num_filaments must be a positive integer")
 
-        if num_filament_points is None:
-            num_filament_points = self.num_points
-
         if coordinate_system not in ["cylindrical", "cartesian"]:
             raise ValueError(
                 "coordinate_system must be either 'cylindrical' or 'cartesian'"
             )
 
-        filament_points_ds = self.get_filament_ds(
-            num_filaments, num_filament_points, coordinate_system
-        )
+        filament_points_ds = self.get_filament_ds(num_filaments, coordinate_system)
 
         filament_list = []
         for i in range(num_filaments):
@@ -192,7 +159,7 @@ class FilamentTracer(ABC):
 
     def make_filament_spline(self):
         """Create a spline which puts eta in terms of phi for this filament."""
-        filament_points, filament_etas = self._trace(self.num_points)
+        filament_points, filament_etas = self.trace()
 
         spline = make_interp_spline(filament_points[:, 1], filament_etas)
         return spline
@@ -233,15 +200,10 @@ class ToroidalFilamentTracer(FilamentTracer):
         self.Z0 = Z0
         self.a = a
 
-    def _trace(
-        self, num_filament_points: Optional[int] = None
-    ) -> tuple[np.ndarray, np.ndarray]:
-        if num_filament_points is None:
-            num_filament_points = self.num_points
-
+    def trace(self) -> tuple[np.ndarray, np.ndarray]:
         # Create a circular filament around the magnetic axis
-        phi = np.linspace(0, 2 * np.pi * self.m / self.n, int(num_filament_points))
-        filament_etas = np.linspace(0, 2 * np.pi, int(num_filament_points))
+        phi = np.linspace(0, 2 * np.pi * self.m / self.n, self.num_points)
+        filament_etas = np.linspace(0, 2 * np.pi, self.num_points)
         R = self.R0 + self.a * np.cos(filament_etas)
         Z = self.Z0 + self.a * np.sin(filament_etas)
 
@@ -264,7 +226,8 @@ class EquilibriumFilamentTracer(FilamentTracer):
         m: int,
         n: int,
         eq_field: EquilibriumField,
-        num_points: Optional[int] = 1000,
+        base_num_points: Optional[int] = 601,
+        default_trace_type: TraceType = TraceType.SINGLE,
     ):
         """Initialize an equilibrium filament.
 
@@ -276,21 +239,23 @@ class EquilibriumFilamentTracer(FilamentTracer):
             Toroidal mode number
         eq_field : EquilibriumField
             EquilibriumField object containing the magnetic field data
-        num_points : int, optional
+        base_num_points : int, optional
             Number of points to trace around the filament
+        default_trace_type : TraceType, optional
+            Default tracing method to use
 
         """
-        super().__init__(m, n, int(num_points))
+        super().__init__(m, n, int(base_num_points))
         self.eq_field = eq_field
+        self.default_trace_type = default_trace_type
 
-    def _trace(
+    def trace(
         self,
-        num_filament_points: Optional[int] = None,
-        method: TraceType = TraceType.SINGLE,
+        trace_type: Optional[TraceType] = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Trace a filament"""
-        if num_filament_points is None:
-            num_filament_points = self.num_points
+        if trace_type is None:
+            trace_type = self.default_trace_type
 
         # Correction for m/n as integer multiples (otherwise leads to ``wandering'' filaments)
         ratio = Fraction(self.m, self.n)
@@ -298,8 +263,8 @@ class EquilibriumFilamentTracer(FilamentTracer):
         n_local = ratio.denominator
         psi_q = self.eq_field.get_psi_of_q(m_local / n_local)
 
-        filament_etas = np.linspace(0, 2 * np.pi, num_filament_points)
-        poloidal_points = np.zeros((num_filament_points, 3))  # R, Z, a
+        filament_etas = np.linspace(0, 2 * np.pi, self.num_points)
+        poloidal_points = np.zeros((self.num_points, 3))  # R, Z, a
 
         # Start at the outboard midplane, slightly outside magnetic axis
         Z_start = self.eq_field.eqdsk.zmagx
@@ -351,21 +316,21 @@ class EquilibriumFilamentTracer(FilamentTracer):
             # https://wiki.fusion.ciemat.es/wiki/Rotational_transform
             return (Bt * r * d_eta) / (R * Bp)
 
-        # Finalize filament trace based on method
-        if method == EquilibriumFilamentTracer.TraceType.CYLINDRICAL:
+        # Finalize filament trace based on trace_type
+        if trace_type == EquilibriumFilamentTracer.TraceType.CYLINDRICAL:
             # Circular cross section around the magnetic axis
             avg_minor_radius = np.mean(poloidal_points[:, 2])
             R = self.eq_field.eqdsk.rmagx + avg_minor_radius * np.cos(filament_etas)
             phi = filament_etas * m_local / n_local
             Z = self.eq_field.eqdsk.zmagx - avg_minor_radius * np.sin(filament_etas)
             filament_points = np.column_stack((R, phi, Z))
-        elif method == EquilibriumFilamentTracer.TraceType.NAIVE:
+        elif trace_type == EquilibriumFilamentTracer.TraceType.NAIVE:
             # Follows the rational surface but not the magnetic field
             phi = filament_etas * m_local / n_local
             filament_points = np.column_stack(
                 (poloidal_points[:, 0], phi, poloidal_points[:, 1])
             )
-        elif method in [
+        elif trace_type in [
             EquilibriumFilamentTracer.TraceType.SINGLE,
             EquilibriumFilamentTracer.TraceType.AVERAGE,
         ]:
@@ -376,7 +341,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
             B = self.eq_field.get_field_at_point(R, Z)
             d_eta = np.mean(np.diff(filament_etas))
             d_phi = _d_phi(r, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1], d_eta)
-            if method == EquilibriumFilamentTracer.TraceType.SINGLE:
+            if trace_type == EquilibriumFilamentTracer.TraceType.SINGLE:
                 phi = np.cumsum(d_phi) - d_phi[0]
             else:
                 # Average d_phi between adjacent points
@@ -414,6 +379,6 @@ class EquilibriumFilamentTracer(FilamentTracer):
 
             filament_points = np.column_stack((R, phi, Z))
         else:
-            raise ValueError("Unknown tracing method")
+            raise ValueError("Unknown tracing trace_type")
 
         return filament_points, filament_etas

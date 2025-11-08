@@ -57,39 +57,39 @@ def gen_OFT_filament_and_eta_file(
 
 
 def gen_OFT_sensors_file(
-    probe_details: xr.Dataset, working_directory: str, debug: bool = True
+    sensor_details: xr.Dataset, working_directory: str, debug: bool = True
 ):
     """
-    Write probe details to OFT format file for ThinCurr
-    OFT calls them sensors, but the more common terminology is probes.
+    Write sensor details to OFT format file for ThinCurr
+    OFT calls them sensors, but the more common terminology is sensors.
 
     Args:
-        probe_details (xr.Dataset): Dataset containing probe location and normal orientation in x,y,z
+        sensor_details (xr.Dataset): Dataset containing sensor location and normal orientation in x,y,z
         working_directory (str): Directory to save the OFT sensor file
         debug (Optional[bool], default=True): If True, print debug information
     """
-    # Assume probe_details is an xarray dataset with the following variables:
-    # X, Y, Z (coordinates of each probe)
-    # theta, phi (orientation of each probe)
+    # Assume sensor_details is an xarray dataset with the following variables:
+    # X, Y, Z (coordinates of each sensor)
+    # theta, phi (orientation of each sensor)
 
-    probe_list = []
-    for probe in probe_details.probe.values:
-        pt = probe_details.position.sel(probe=probe).values
+    sensor_list = []
+    for sensor in sensor_details.sensor.values:
+        pt = sensor_details.position.sel(sensor=sensor).values
         # normal vector does not currently account for toroidal tilt
-        norm = probe_details.normal.sel(probe=probe).values
-        # Probe radius
-        dx = probe_details.radius.sel(probe=probe).item()
+        norm = sensor_details.normal.sel(sensor=sensor).values
+        # sensor radius
+        dx = sensor_details.radius.sel(sensor=sensor).item()
         # create Mirnov object
-        probe_list.append(Mirnov(pt, norm, probe, dx))
+        sensor_list.append(Mirnov(pt, norm, sensor, dx))
 
     # Save in ThinCurr format
     save_sensors(
-        probe_list,
-        f"{working_directory}/floops_{probe_details.attrs['probe_set_name']}.loc",
+        sensor_list,
+        f"{working_directory}/floops_{sensor_details.attrs['sensor_set_name']}.loc",
     )
     if debug:
         print(
             "Wrote OFT sensor file to %s/floops_%s.loc"
-            % (working_directory, probe_details.attrs["probe_set_name"])
+            % (working_directory, sensor_details.attrs["sensor_set_name"])
         )
-    return probe_list
+    return sensor_list

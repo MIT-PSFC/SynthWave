@@ -21,12 +21,12 @@ MAJOR_RADIUS = 1
 MINOR_RADIUS = 0.3
 
 
-def create_torus_mesh(R0, a):
+def create_torus_mesh(R0, a, ntheta=64, nphi=128):
     # Create r_grid: [nphi, ntheta, 3] array defining the surface of one field period
     nfp = 1
     # I want these to be as high resolution as possible without segfaulting ThinCurr
-    ntheta = nextprime(64)  # Example was originally 40
-    nphi = nextprime(128)  # Example was originally 80
+    ntheta = nextprime(ntheta)  # Example was originally 40
+    nphi = nextprime(nphi)  # Example was originally 80
 
     # Create poloidal and toroidal angle grids
     theta = np.linspace(0, 2 * np.pi, ntheta, endpoint=False)

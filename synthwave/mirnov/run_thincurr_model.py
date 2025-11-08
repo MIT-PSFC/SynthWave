@@ -8,36 +8,20 @@ import matplotlib.pyplot as plt
 from synthwave.magnetic_geometry.filaments import FilamentTracer
 from typing import Optional
 import vtk
+from synthwave import VESSEL_CACHE_DIR
 
 
-def calc_frequency_response(
-    probe_details: xr.Dataset,
+def calc_direct_response(
+    sensor_details: xr.Dataset,
     tracer: FilamentTracer,
-    freq: float,
     mesh_file: str,
     working_directory: str,
     n_threads: Optional[int] = None,
-    debug_plot_path: Optional[str] = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> xr.Dataset:
     """
-    Calculate the measured frequency response at the given probes due to filaments defined by the tracer.
-    Assumes that the OFT input files have already been generated in the working_directory.
+    Calculate only the direct filament to sensor responses (no vessel currents) at the given sensors due to filaments defined by the tracer.
 
-    Also note that this isn't exactly what a probe would measure, since the output is in [T] not [T/s].
-    This is fine for mode structure identification, but for amplitude matching the output needs to be corrected elsewhere.
-
-    Args:
-        probe_details (xr.Dataset): Dataset containing probe location and normal orientation in x,y,z geometry
-        tracer (FilamentTracer): FilamentTracer object defining the filaments to simulate
-        freq (float): Frequency to simulate [Hz]
-        mesh_file (str): Path to the vessel mesh file for ThinCurr
-        working_directory (str): Directory to read/write ThinCurr files
-        n_threads (Optional[int], default=None): Number of threads to use for ThinCurr calculations. If None, uses all available CPU cores.
-
-    Returns:
-        total_response (np.ndarray): Complex array of total probe signals [T]
-        vessel_response (np.ndarray): Complex array of probe signals due to vessel currents [T]
-        direct_response (np.ndarray): Complex array of probe signals due to direct filament coupling [T]
+    From testing, the vessel response has minimal impact on the phases, so this can be used for spectral analysis.
     """
 
     # Create thin wall model
@@ -52,16 +36,102 @@ def calc_frequency_response(
     # Calculate mutual inductances
 
     # finite element mesh -> sensor, coil -> sensor
-    probe_set_file = os.path.join(
-        working_directory, f"floops_{probe_details.attrs['probe_set_name']}.loc"
+    sensor_set_file = os.path.join(
+        working_directory, f"floops_{sensor_details.attrs['sensor_set_name']}.loc"
     )
-    Msensor, Msc, sensor_obj = tw_model.compute_Msensor(probe_set_file)
+    _, Msc, sensor_obj = tw_model.compute_Msensor(sensor_set_file)
+
+    # Build driver from filaments
+    filament_details = tracer.get_filament_ds(
+        num_filaments=Msc.shape[0], coordinate_system="cartesian"
+    )
+    filament_currents = (
+        filament_details.current.values
+    )  # Complex array for rotating wave
+
+    # Contribution from filament current directly to the sensor
+    # This is the mutual inductance flux: Phi = M * I (both are complex)
+    direct_response = np.dot(filament_currents, Msc)
+
+    direct_response_ds = xr.Dataset(
+        data_vars={
+            "direct_response_real": (
+                ["sensor"],
+                direct_response.real,
+            ),
+            "direct_response_imag": (
+                ["sensor"],
+                direct_response.imag,
+            ),
+        },
+        coords={
+            "sensor": sensor_obj[
+                "names"
+            ]  # Define the 'sensor' coordinate with the list of sensor names
+        },
+        attrs={
+            "mesh_file": mesh_file,
+            "sensor_set_name": sensor_details.attrs["sensor_set_name"],
+        },
+    )
+
+    return direct_response_ds
+
+
+def calc_frequency_response(
+    sensor_details: xr.Dataset,
+    tracer: FilamentTracer,
+    freq: float,
+    mesh_file: str,
+    working_directory: str,
+    n_threads: Optional[int] = None,
+    debug_plot_path: Optional[str] = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Calculate the measured frequency response at the given sensors due to filaments defined by the tracer.
+    Assumes that the OFT input files have already been generated in the working_directory.
+
+    Also note that this isn't exactly what a sensor would measure, since the output is in [T] not [T/s].
+    This is fine for mode structure identification, but for amplitude matching the output needs to be corrected elsewhere.
+
+    Args:
+        sensor_details (xr.Dataset): Dataset containing sensor location and normal orientation in x,y,z geometry
+        tracer (FilamentTracer): FilamentTracer object defining the filaments to simulate
+        freq (float): Frequency to simulate [Hz]
+        mesh_file (str): Path to the vessel mesh file for ThinCurr
+        working_directory (str): Directory to read/write ThinCurr files
+        n_threads (Optional[int], default=None): Number of threads to use for ThinCurr calculations. If None, uses all available CPU cores.
+
+    Returns:
+        total_response (np.ndarray): Complex array of total sensor signals [T]
+        vessel_response (np.ndarray): Complex array of sensor signals due to vessel currents [T]
+        direct_response (np.ndarray): Complex array of sensor signals due to direct filament coupling [T]
+    """
+
+    # Create thin wall model
+    oft_env = OFT_env(nthreads=os.cpu_count() if n_threads is None else n_threads)
+    tw_model = ThinCurr(oft_env)
+    tw_model.setup_model(
+        mesh_file=mesh_file,
+        xml_filename=os.path.join(working_directory, "oft_in.xml"),
+    )
+    tw_model.setup_io(working_directory)
+
+    # Calculate mutual inductances
+
+    # finite element mesh -> sensor, coil -> sensor
+    sensor_set_file = os.path.join(
+        working_directory, f"floops_{sensor_details.attrs['sensor_set_name']}.loc"
+    )
+    Msensor, Msc, sensor_obj = tw_model.compute_Msensor(sensor_set_file)
 
     # filament -> finite element mesh
     Mc = tw_model.compute_Mcoil()
 
     # Build inductance matrix
+    cache_file = os.path.join(VESSEL_CACHE_DIR, os.path.basename(mesh_file))
     tw_model.compute_Lmat(
+        cache_file=cache_file,
         use_hodlr=True,
     )
     tw_model.compute_Rmat()
@@ -137,12 +207,12 @@ def calc_frequency_response(
                 opacity=1,
             )
 
-        # Plot probes
-        for probe in probe_details.probe:
-            probe_data = probe_details.sel(probe=probe)
-            probe_point = probe_data.position.data
+        # Plot sensors
+        for sensor in sensor_details.sensor:
+            sensor_data = sensor_details.sel(sensor=sensor)
+            sensor_point = sensor_data.position.data
             plotter.add_points(
-                probe_point,
+                sensor_point,
                 color="k",
                 point_size=10,
                 render_points_as_spheres=True,
@@ -221,7 +291,7 @@ def run_frequency_scan(
     tw_mesh,
     freq,
     coil_currs,
-    probe_details,
+    sensor_details,
     mesh_file,
     sensor_obj,
     mode,
@@ -234,22 +304,22 @@ def run_frequency_scan(
 
     # Mutual between the mesh and sensors, and coil and sensors
     Msensor, Msc, _ = tw_mesh.compute_Msensor(
-        working_directory + "floops_%s.loc" % probe_details.attrs["probe_set_name"]
+        working_directory + "floops_%s.loc" % sensor_details.attrs["sensor_set_name"]
     )
 
     # Test one frequency
     result = tw_mesh.compute_freq_response(fdriver=driver, freq=freq)
 
     # contribution from the mesh current to the sensor, with the mesh current at a given frequency
-    probe_signals = np.dot(result, Msensor)
+    sensor_signals = np.dot(result, Msensor)
 
     # Contribuio from the coil current directly to the sensor
-    probe_signals[:, :] += np.dot(coil_currs, Msc)
+    sensor_signals[:, :] += np.dot(coil_currs, Msc)
 
-    # for i in range(probe_signals.shape[1]):
-    #     print('Real: {0:13.5E}, Imaginary: {1:13.5E}'.format(*probe_signals[:,i]))
-    probe_signals = (
-        probe_signals[0, :] + 1j * probe_signals[1, :]
+    # for i in range(sensor_signals.shape[1]):
+    #     print('Real: {0:13.5E}, Imaginary: {1:13.5E}'.format(*sensor_signals[:,i]))
+    sensor_signals = (
+        sensor_signals[0, :] + 1j * sensor_signals[1, :]
     )  # Combine real and imaginary parts
 
     # Only compute the mesh induced currents once
@@ -262,7 +332,7 @@ def run_frequency_scan(
         data_vars={
             "signal": (
                 ["sensor"],
-                probe_signals,
+                sensor_signals,
             )  # Use a single data variable with a 'sensor' dimension
         },
         coords={
@@ -272,7 +342,7 @@ def run_frequency_scan(
         },
         attrs={
             "mesh_file": mesh_file,
-            "sensor_set_name": probe_details.attrs["probe_set_name"],
+            "sensor_set_name": sensor_details.attrs["sensor_set_name"],
             "driving_frequency": freq,
             "m": mode["m"],
             "n": mode["n"],
@@ -409,7 +479,7 @@ def correct_frequency_response(
     doSave,
     debug,
     working_directory,
-    probe_details,
+    sensor_details,
     save_Ext,
 ):
     # Correct sensor signals for frequency response
@@ -426,9 +496,9 @@ def correct_frequency_response(
     if doSave:
         sensors_bode.to_netcdf(
             working_directory
-            + "probe_signals_%s_m%02d_n%02d_f%1.1ekHz%s.nc"
+            + "sensor_signals_%s_m%02d_n%02d_f%1.1ekHz%s.nc"
             % (
-                probe_details.attrs["probe_set_name"],
+                sensor_details.attrs["sensor_set_name"],
                 mode["m"],
                 mode["n"],
                 freq / 1e3,
@@ -438,12 +508,12 @@ def correct_frequency_response(
         )
         if debug:
             print(
-                "Saved probe signals to %s"
+                "Saved sensor signals to %s"
                 % (
                     working_directory
-                    + "probe_signals_%s_m%02d_n%02d_f%1.1ekHz%s.nc"
+                    + "sensor_signals_%s_m%02d_n%02d_f%1.1ekHz%s.nc"
                     % (
-                        probe_details.attrs["probe_set_name"],
+                        sensor_details.attrs["sensor_set_name"],
                         mode["m"],
                         mode["n"],
                         freq / 1e3,
