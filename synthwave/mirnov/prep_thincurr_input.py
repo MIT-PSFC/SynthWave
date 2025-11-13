@@ -57,7 +57,7 @@ def gen_OFT_filament_and_eta_file(
 
 
 def gen_OFT_sensors_file(
-    sensor_details: xr.Dataset, working_directory: str, debug: bool = True
+    sensor_details: xr.Dataset, working_directory: str, sensor_file_path: Optional[str] = None, debug: bool = True
 ):
     """
     Write sensor details to OFT format file for ThinCurr
@@ -67,6 +67,9 @@ def gen_OFT_sensors_file(
         sensor_details (xr.Dataset): Dataset containing sensor location and normal orientation in x,y,z
         working_directory (str): Directory to save the OFT sensor file
         debug (Optional[bool], default=True): If True, print debug information
+
+    Returns:
+        str: Path to the generated OFT sensor file
     """
     # Assume sensor_details is an xarray dataset with the following variables:
     # X, Y, Z (coordinates of each sensor)
@@ -82,14 +85,14 @@ def gen_OFT_sensors_file(
         # create Mirnov object
         sensor_list.append(Mirnov(pt, norm, sensor, dx))
 
+    if sensor_file_path is None:
+        sensor_file_path = os.path.join(working_directory, f"floops_{sensor_details.attrs['sensor_set_name']}.loc")
+
     # Save in ThinCurr format
     save_sensors(
         sensor_list,
-        f"{working_directory}/floops_{sensor_details.attrs['sensor_set_name']}.loc",
+        sensor_file_path,
     )
     if debug:
-        print(
-            "Wrote OFT sensor file to %s/floops_%s.loc"
-            % (working_directory, sensor_details.attrs["sensor_set_name"])
-        )
-    return sensor_list
+        print(f"Wrote OFT sensor file to {sensor_file_path}")
+    return sensor_file_path
