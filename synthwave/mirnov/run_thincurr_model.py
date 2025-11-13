@@ -12,11 +12,12 @@ from synthwave import VESSEL_CACHE_DIR
 
 
 def calc_direct_response(
-    sensor_details: xr.Dataset,
+    oft_env: OFT_env,
     tracer: FilamentTracer,
     mesh_file: str,
+    sensor_details: xr.Dataset,
+    sensor_file_path: str,
     working_directory: str,
-    n_threads: Optional[int] = None,
 ) -> xr.Dataset:
     """
     Calculate only the direct filament to sensor responses (no vessel currents) at the given sensors due to filaments defined by the tracer.
@@ -25,7 +26,6 @@ def calc_direct_response(
     """
 
     # Create thin wall model
-    oft_env = OFT_env(nthreads=os.cpu_count() if n_threads is None else n_threads)
     tw_model = ThinCurr(oft_env)
     tw_model.setup_model(
         mesh_file=mesh_file,
@@ -36,10 +36,7 @@ def calc_direct_response(
     # Calculate mutual inductances
 
     # finite element mesh -> sensor, coil -> sensor
-    sensor_set_file = os.path.join(
-        working_directory, f"floops_{sensor_details.attrs['sensor_set_name']}.loc"
-    )
-    _, Msc, sensor_obj = tw_model.compute_Msensor(sensor_set_file)
+    _, Msc, sensor_obj = tw_model.compute_Msensor(sensor_file_path)
 
     # Build driver from filaments
     filament_details = tracer.get_filament_ds(
@@ -79,13 +76,13 @@ def calc_direct_response(
 
 
 def calc_frequency_response(
-    sensor_details: xr.Dataset,
+    oft_env: OFT_env,
     tracer: FilamentTracer,
     freq: float,
     mesh_file: str,
     working_directory: str,
-    n_threads: Optional[int] = None,
     debug_plot_path: Optional[str] = None,
+    sensor_file_path: Optional[str] = None
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Calculate the measured frequency response at the given sensors due to filaments defined by the tracer.
@@ -95,12 +92,13 @@ def calc_frequency_response(
     This is fine for mode structure identification, but for amplitude matching the output needs to be corrected elsewhere.
 
     Args:
-        sensor_details (xr.Dataset): Dataset containing sensor location and normal orientation in x,y,z geometry
+        oft_env (OFT_env): OFT environment object, can only be created once per process
+        sensor_file_path (str): Path to the sensor file for ThinCurr
         tracer (FilamentTracer): FilamentTracer object defining the filaments to simulate
         freq (float): Frequency to simulate [Hz]
         mesh_file (str): Path to the vessel mesh file for ThinCurr
         working_directory (str): Directory to read/write ThinCurr files
-        n_threads (Optional[int], default=None): Number of threads to use for ThinCurr calculations. If None, uses all available CPU cores.
+        sensor_details (xr.Dataset): Dataset containing sensor location and normal orientation in x,y,z geometry
 
     Returns:
         total_response (np.ndarray): Complex array of total sensor signals [T]
@@ -109,7 +107,6 @@ def calc_frequency_response(
     """
 
     # Create thin wall model
-    oft_env = OFT_env(nthreads=os.cpu_count() if n_threads is None else n_threads)
     tw_model = ThinCurr(oft_env)
     tw_model.setup_model(
         mesh_file=mesh_file,
@@ -120,10 +117,7 @@ def calc_frequency_response(
     # Calculate mutual inductances
 
     # finite element mesh -> sensor, coil -> sensor
-    sensor_set_file = os.path.join(
-        working_directory, f"floops_{sensor_details.attrs['sensor_set_name']}.loc"
-    )
-    Msensor, Msc, sensor_obj = tw_model.compute_Msensor(sensor_set_file)
+    Msensor, Msc, sensor_obj = tw_model.compute_Msensor(sensor_file_path)
 
     # filament -> finite element mesh
     Mc = tw_model.compute_Mcoil()
