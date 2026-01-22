@@ -5,11 +5,19 @@ Originally developed by Rian Chandra [here](https://github.com/chandrarn/Synthet
 
 ## Installation Instructions
 
-1. Download and install [OpenFUSIONToolkit](https://github.com/OpenFUSIONToolkit/OpenFUSIONToolkit), and make note of the folder where you put it
-2. Run the following commands to make a symlink and a pyproject.toml
+SynthWave is automatically installed as part of the TARS installation process. The TARS `install.sh` script will:
+
+1. Download and install [OpenFUSIONToolkit](https://github.com/OpenFUSIONToolkit/OpenFUSIONToolkit) to `../OpenFUSIONToolkit`
+2. Configure the Python bindings automatically
+3. Install SynthWave and its dependencies via `uv sync`
+
+If you want to use SynthWave standalone (outside of TARS), you need to:
+
+1. Download and install [OpenFUSIONToolkit](https://github.com/OpenFUSIONToolkit/OpenFUSIONToolkit) v1.0.0-beta6
+2. Extract it to `../OpenFUSIONToolkit` (relative to this directory)
+3. Create a `pyproject.toml` in the OpenFUSIONToolkit Python directory:
 ```shell
-ln -s /path/to/OpenFUSIONToolkit ./submodules/OpenFUSIONToolkit
-cat > ./submodules/OpenFUSIONToolkit/python << 'EOF'
+cat > ../OpenFUSIONToolkit/python/pyproject.toml << 'EOF'
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
@@ -17,16 +25,18 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openfusiontoolkit"
 version = "1.0.0b6"
-description = "Local OpenFUSIONToolkit vendorized package"
+description = "OpenFUSIONToolkit Python bindings"
 requires-python = ">=3.9"
-readme = "README.md"
 
 [tool.setuptools]
 packages = ["OpenFUSIONToolkit"]
 EOF
 ```
-3. Run `uv sync`, and everything should install
-4. (Optional) if you want to get proper highlighting in VSCode, add this to `.vscode/settings.json`:
+4. Run `uv sync` from this directory
+
+### Optional: VSCode Integration
+
+For proper code highlighting in VSCode, add this to `.vscode/settings.json`:
 ```json
 {
     "python.analysis.extraPaths": [

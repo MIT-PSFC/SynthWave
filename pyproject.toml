@@ -35,7 +35,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-openfusiontoolkit = {path = "submodules/OpenFUSIONToolkit/python", editable = true}
+openfusiontoolkit = {path = "../OpenFUSIONToolkit/python", editable = true}
 
 [tool.isort]
 profile = "black"
