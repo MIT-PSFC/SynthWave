@@ -326,7 +326,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
         # Currently: +m/+n helicity matches empirical C-Mod pickup
         def _Z_a(eta, a):
             Z = self.eq_field.eqdsk.zmagx + (helicity_sign) * (a * np.sin(eta))
-            return Z 
+            return Z
 
         def psi_prime_a(eta, a):
             # Derivative of psi with respect to a at a given eta
