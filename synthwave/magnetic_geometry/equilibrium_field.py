@@ -85,7 +85,7 @@ class EquilibriumField:
             func=lambda psi: self.qpsi(psi) - q,
             x0=psi_guess,
             fprime=lambda psi: self.qpsi.derivative(1)(psi),
-            maxiter = 400,tol=1e-3
+            maxiter=400, tol=1e-3
         )
 
         # RNC EDIT:
