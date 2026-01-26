@@ -286,7 +286,28 @@ class EquilibriumFilamentTracer(FilamentTracer):
         method: TraceType = TraceType.SINGLE,
         helicity_sign: int = +1,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Trace a filament"""
+        """Trace a filament along the equilibrium magnetic field.
+
+        Parameters
+        ----------
+        num_filament_points : int, optional
+            Number of points to use for tracing a single poloidal turn of the filament.
+            If ``None``, the value stored in ``self.num_points`` is used.
+        method : EquilibriumFilamentTracer.TraceType, optional
+            Tracing strategy to use. This controls how the field is followed when
+            computing the filament shape (e.g., cylindrical approximation, naive,
+            single-point, or averaged tracing).
+        helicity_sign : int, optional
+            Sign of the helicity used when following the field lines. A value of
+            ``+1`` traces in the default direction, while ``-1`` reverses the
+            direction.
+
+        Returns
+        -------
+        tuple of numpy.ndarray
+            Tuple containing arrays describing the traced filament coordinates.
+
+        """
         if num_filament_points is None:
             num_filament_points = self.num_points
 
