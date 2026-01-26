@@ -89,7 +89,7 @@ class EquilibriumField:
         )
 
         # RNC EDIT:
-        # CHECK: For q~<=1, depening on the resolution of the gEQDSK file, 
+        # CHECK: For q~<=1, depending on the resolution of the gEQDSK file, 
         # the interpolation function can request a psi value at or less 
         # than the minimum in the psi_grid vector
         # Check to see if the value we want plausibly exists in the final set
