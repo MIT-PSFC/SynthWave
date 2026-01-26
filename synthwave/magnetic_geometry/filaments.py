@@ -284,6 +284,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
         self,
         num_filament_points: Optional[int] = None,
         method: TraceType = TraceType.SINGLE,
+        helicity_sign: int = +1
     ) -> tuple[np.ndarray, np.ndarray]:
         """Trace a filament"""
         if num_filament_points is None:
@@ -322,17 +323,17 @@ class EquilibriumFilamentTracer(FilamentTracer):
             R = self.eq_field.eqdsk.rmagx + (a * np.cos(eta))
             return R
 
+        # Currently: +m/+n helicity matches empirical C-Mod pickup
         def _Z_a(eta, a):
-            Z = self.eq_field.eqdsk.zmagx - (a * np.sin(eta))
-            return Z
+            Z = self.eq_field.eqdsk.zmagx + (helicity_sign) * (a * np.sin(eta))
+            return Z 
 
         def psi_prime_a(eta, a):
             # Derivative of psi with respect to a at a given eta
             R = _R_a(eta, a)
             Z = _Z_a(eta, a)
-            return self.eq_field.psi.ev(R, Z, dx=1, dy=0) * np.cos(
-                eta
-            ) - self.eq_field.psi.ev(R, Z, dx=0, dy=1) * np.sin(eta)
+            return self.eq_field.psi.ev(R, Z, dx=1, dy=0) * np.cos(eta) + \
+                (helicity_sign) * self.eq_field.psi.ev(R, Z, dx=0, dy=1) * np.sin(eta)
 
         for i, eta in enumerate(filament_etas):
             if i == 0:
@@ -349,13 +350,19 @@ class EquilibriumFilamentTracer(FilamentTracer):
                 func=lambda a: self.eq_field.psi.ev(_R_a(eta, a), _Z_a(eta, a)) - psi_q,
                 x0=a_guess,
                 fprime=lambda a: psi_prime_a(eta, a),
+                maxiter=800,
+                tol=1e-3,
             )
             poloidal_points[i, :] = [_R_a(eta, a_next), _Z_a(eta, a_next), a_next]
 
         def _d_phi(r, R, Bp, Bt, d_eta):
             # https://wiki.fusion.ciemat.es/wiki/Rotational_transform
             return (Bt * r * d_eta) / (R * Bp)
-
+        #alternative form removing the assumption that dl = r d_eta (that assumption holds only for circular cross-sections)
+        def _d_phi_dl(dl, R, Bp, Bt):
+            # https://youjunhu.github.io/research_notes/tokamak_equilibrium_htlatex/tokamak_equilibrium.html
+            return (Bt * dl) / (R * Bp)
+        
         # Finalize filament trace based on method
         if method == EquilibriumFilamentTracer.TraceType.CYLINDRICAL:
             # Circular cross section around the magnetic axis
@@ -379,8 +386,19 @@ class EquilibriumFilamentTracer(FilamentTracer):
             Z = poloidal_points[:, 1]
             r = poloidal_points[:, 2]
             B = self.eq_field.get_field_at_point(R, Z)
-            d_eta = np.mean(np.diff(filament_etas))
-            d_phi = _d_phi(r, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1], d_eta)
+            
+
+            # Switching to improved d_phi formula from the below:
+            # d_eta = np.mean(np.diff(filament_etas))
+            # d_phi = _d_phi(r, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1], d_eta)
+
+            # Compute segment lengths with wraparound so the last segment goes from
+            # the final point back to the first
+            dR = np.roll(R, -1) - R
+            dZ = np.roll(Z, -1) - Z
+            dl = np.sqrt(dR**2 + dZ**2)
+            d_phi = _d_phi_dl(dl, R, np.sqrt(B[0]**2 + B[2]**2), B[1])
+
             if method == EquilibriumFilamentTracer.TraceType.SINGLE:
                 phi = np.cumsum(d_phi) - d_phi[0]
             else:
@@ -391,12 +409,17 @@ class EquilibriumFilamentTracer(FilamentTracer):
             # Numerical correction to ensure final point is at the proper angle
             # We can do this multiple times, whenever we know for sure that the phi is a multiple of pi * m / n
 
-            # RNC EDIT: Sign flip necessary to account for helicity direction
+            # Sign flip necessary to account for helicity direction
+            # Note: The improved d_phi method should ensure this is always correct now [e.g. the correction factor is no longer strictly necessary]
+
             known_phis = np.linspace(
                 0, 2 * np.pi * self.m_local, (2 * self.n_local) + 1
             ) * np.sign(phi[-1])
+
             for i, known_phi_start in enumerate(known_phis[:-1]):
+
                 known_phi_end = known_phis[i + 1]
+
                 if np.sign(phi[-1]) == 1:
                     phi_indices = np.squeeze(
                         np.where((phi >= known_phi_start) & (phi <= known_phi_end))
@@ -411,6 +434,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
                 correction_factor = (known_phi_end - known_phi_start) / (
                     actual_phi_end - actual_phi_start
                 )
+
                 phi[phi_indices] = (
                     known_phi_start
                     + (phi[phi_indices] - actual_phi_start) * correction_factor
