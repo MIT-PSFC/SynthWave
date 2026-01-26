@@ -52,7 +52,6 @@ class EquilibriumField:
         # Linear grid of psi for 1D profiles
         # https://freeqdsk.readthedocs.io/en/stable/geqdsk.html
         self.psi_grid = np.linspace(eqdsk.simagx, eqdsk.sibdry, eqdsk.nx)
-        
         # q(psi)
         # RNC EDIT: Switching to smoothing spline to avoid strange "discretization" jumps
         # Note: lam value (lower = less smoothing) should be reasonably consistent across q 
