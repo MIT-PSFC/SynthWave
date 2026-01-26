@@ -105,7 +105,7 @@ class EquilibriumField:
             if psi > self.psi_grid[0]:
                 return psi
             else:
-                raise SyntaxError(
+                raise ValueError(
                     'Error: requested q=%1.3f is outside the gEQDSK range (q_min = %1.3f)'
                     % (q, qpsi_grid[0])
                 )
