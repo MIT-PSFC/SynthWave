@@ -284,7 +284,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
         self,
         num_filament_points: Optional[int] = None,
         method: TraceType = TraceType.SINGLE,
-        helicity_sign: int = +1
+        helicity_sign: int = +1,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Trace a filament"""
         if num_filament_points is None:
