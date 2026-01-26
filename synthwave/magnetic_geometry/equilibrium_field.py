@@ -42,7 +42,7 @@ def biot_savart_cylindrical(
 
 
 class EquilibriumField:
-    def __init__(self, eqdsk,lam=1e-7):
+    def __init__(self, eqdsk, lam=1e-7):
         self.eqdsk = eqdsk
         self.psi = RectBivariateSpline(
             eqdsk.r_grid[:, 0], eqdsk.z_grid[0, :], eqdsk.psi,
