@@ -103,6 +103,11 @@ class EquilibriumField:
                 lin_interp_q = np.polyfit(self.psi_grid[:30],qpsi_grid[:30], 1)
                 psi = self.psi_grid[ np.argmin(np.abs(np.polyval(lin_interp_q,self.psi_grid[:30]) - q)) ]
             
-            if psi > self.psi_grid[0]: return psi
-            else: raise SyntaxError('Error: requested q=%1.3f is outside the gEQDSK range (q_min = %1.3f)'%(q,qpsi_grid[0]))
+            if psi > self.psi_grid[0]:
+                return psi
+            else:
+                raise SyntaxError(
+                    'Error: requested q=%1.3f is outside the gEQDSK range (q_min = %1.3f)'
+                    % (q, qpsi_grid[0])
+                )
         return psi
