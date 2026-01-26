@@ -88,7 +88,7 @@ class EquilibriumField:
             maxiter = 400,tol=1e-3
         )
 
-        # RNC EDIT: 
+        # RNC EDIT:
         # CHECK: For q~<=1, depening on the resolution of the gEQDSK file, 
         # the interpolation function can request a psi value at or less 
         # than the minimum in the psi_grid vector
