@@ -99,7 +99,7 @@ class EquilibriumField:
             # check if there's a range of possible q-values (e.g.) if this is plausably a resolution issue
             tol = 1e-3
             if np.argwhere(qpsi_grid>(qpsi_grid[0]+1e-3)).squeeze()[0] > 1: # multiple identical q values in a row
-                lin_interp_q = np.polyfit(self.psi_grid[:30],qpsi_grid[:30], 1)
+                lin_interp_q = np.polyfit(self.psi_grid[:30], qpsi_grid[:30], 1)
                 psi = self.psi_grid[ np.argmin(np.abs(np.polyval(lin_interp_q,self.psi_grid[:30]) - q)) ]
             
             if psi > self.psi_grid[0]:
