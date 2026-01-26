@@ -1,7 +1,7 @@
 import numpy as np
 
 from scipy.constants import mu_0
-from scipy.interpolate import RectBivariateSpline, make_interp_spline
+from scipy.interpolate import RectBivariateSpline, make_interp_spline, make_smoothing_spline
 from scipy.optimize import newton
 
 from synthwave.magnetic_geometry.utils import (
