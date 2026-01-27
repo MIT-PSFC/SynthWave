@@ -353,8 +353,9 @@ class EquilibriumFilamentTracer(FilamentTracer):
             # Derivative of psi with respect to a at a given eta
             R = _R_a(eta, a)
             Z = _Z_a(eta, a)
-            return self.eq_field.psi.ev(R, Z, dx=1, dy=0) * np.cos(eta) + \
-                (helicity_sign) * self.eq_field.psi.ev(R, Z, dx=0, dy=1) * np.sin(eta)
+            return self.eq_field.psi.ev(R, Z, dx=1, dy=0) * np.cos(eta) + (
+                helicity_sign
+            ) * self.eq_field.psi.ev(R, Z, dx=0, dy=1) * np.sin(eta)
 
         for i, eta in enumerate(filament_etas):
             if i == 0:
@@ -379,11 +380,12 @@ class EquilibriumFilamentTracer(FilamentTracer):
         def _d_phi(r, R, Bp, Bt, d_eta):
             # https://wiki.fusion.ciemat.es/wiki/Rotational_transform
             return (Bt * r * d_eta) / (R * Bp)
-        #alternative form removing the assumption that dl = r d_eta (that assumption holds only for circular cross-sections)
+
+        # alternative form removing the assumption that dl = r d_eta (that assumption holds only for circular cross-sections)
         def _d_phi_dl(dl, R, Bp, Bt):
             # https://youjunhu.github.io/research_notes/tokamak_equilibrium_htlatex/tokamak_equilibrium.html
             return (Bt * dl) / (R * Bp)
-        
+
         # Finalize filament trace based on method
         if method == EquilibriumFilamentTracer.TraceType.CYLINDRICAL:
             # Circular cross section around the magnetic axis
@@ -405,9 +407,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
             # determine d(phi)/d(eta) from magnetic field
             R = poloidal_points[:, 0]
             Z = poloidal_points[:, 1]
-            r = poloidal_points[:, 2]
             B = self.eq_field.get_field_at_point(R, Z)
-            
 
             # Switching to improved d_phi formula from the below:
             # d_eta = np.mean(np.diff(filament_etas))
@@ -418,7 +418,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
             dR = np.roll(R, -1) - R
             dZ = np.roll(Z, -1) - Z
             dl = np.sqrt(dR**2 + dZ**2)
-            d_phi = _d_phi_dl(dl, R, np.sqrt(B[0]**2 + B[2]**2), B[1])
+            d_phi = _d_phi_dl(dl, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1])
 
             if method == EquilibriumFilamentTracer.TraceType.SINGLE:
                 phi = np.cumsum(d_phi) - d_phi[0]
@@ -438,7 +438,6 @@ class EquilibriumFilamentTracer(FilamentTracer):
             ) * np.sign(phi[-1])
 
             for i, known_phi_start in enumerate(known_phis[:-1]):
-
                 known_phi_end = known_phis[i + 1]
 
                 if np.sign(phi[-1]) == 1:
