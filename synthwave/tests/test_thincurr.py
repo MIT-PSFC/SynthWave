@@ -5,6 +5,7 @@ from freeqdsk import geqdsk
 import xarray as xr
 import pytest
 from sympy import nextprime
+from OpenFUSIONToolkit import OFT_env
 
 from synthwave import PACKAGE_ROOT
 
@@ -22,6 +23,13 @@ from synthwave.mirnov.prep_thincurr_input import (
 from synthwave.magnetic_geometry.utils import angle_domain, wrapped_diff
 
 
+# Fixture for oft environment so only one is created for all tests
+@pytest.fixture
+def oft_env_fixture():
+    oft_env = OFT_env()
+    return oft_env
+
+
 @pytest.mark.parametrize(
     "mode",
     [
@@ -33,15 +41,15 @@ from synthwave.magnetic_geometry.utils import angle_domain, wrapped_diff
     ],
 )
 @pytest.mark.parametrize("major_radius", [1, 20])
-def test_toroidal_angles(mode, major_radius):
+def test_toroidal_angles(mode, major_radius, oft_env_fixture):
     minor_radius_vessel = 0.35
     minor_radius_probe = 0.34
     minor_radius_plasma = 0.3
 
     num_filaments = nextprime(64)
     resistivity = 1e-6
-    num_filament_points = nextprime(1000 * major_radius)
-    probe_details = xr.Dataset(
+    base_num_points = 1000 * major_radius
+    sensor_details = xr.Dataset(
         data_vars={
             "position": (
                 ("sensor", "coord"),
@@ -84,7 +92,7 @@ def test_toroidal_angles(mode, major_radius):
             "sensor": np.array(["sensor_a", "sensor_b", "sensor_c", "sensor_d"]),
         },
         attrs={
-            "probe_set_name": "test_probes",
+            "sensor_set_name": "test_sensors",
         },
     )
 
@@ -99,9 +107,11 @@ def test_toroidal_angles(mode, major_radius):
             major_radius,
             0,
             minor_radius_plasma,
-            num_points=num_filament_points,
+            base_num_points=base_num_points,
+            scale_points=False,
+            prevent_synthetic_structure=True,
         )
-        filament_list = toroidal_tracer.get_filament_list(
+        filament_list, _ = toroidal_tracer.get_filament_list(
             num_filaments=num_filaments, coordinate_system="cartesian"
         )
 
@@ -111,17 +121,18 @@ def test_toroidal_angles(mode, major_radius):
             resistivity_list=[resistivity],
         )
 
-        gen_OFT_sensors_file(
-            probe_details=probe_details,
+        sensor_file_path = gen_OFT_sensors_file(
+            sensor_details=sensor_details,
             working_directory=working_directory,
         )
 
         total_response, direct_response, vessel_response = calc_frequency_response(
-            probe_details=probe_details,
+            oft_env=oft_env_fixture,
             tracer=toroidal_tracer,
             freq=10e3,
             mesh_file=torus_mesh_file,
             working_directory=working_directory,
+            sensor_file_path=sensor_file_path,
         )
     # These are just for debugging purposes
     total_response_phase = np.angle(total_response)
