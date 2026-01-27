@@ -523,7 +523,7 @@ def correct_frequency_response(
 ################################################################################################
 def plot_sensor_output(
     working_files_directory,
-    probe_details,
+    sensor_details,
     mode,
     freq,
     save_Ext,
@@ -532,7 +532,7 @@ def plot_sensor_output(
     # Load in saved sensor signals from netCDF format and plot
 
     fName = working_files_directory + "probe_signals_%s_m%02d_n%02d_f%1.1ekHz%s.nc" % (
-        probe_details.attrs["probe_set_name"],
+        sensor_details.attrs["probe_set_name"],
         mode["m"],
         mode["n"],
         freq / 1e3,

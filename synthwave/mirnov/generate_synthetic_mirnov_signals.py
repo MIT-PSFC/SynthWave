@@ -36,7 +36,7 @@ from synthwave.mirnov.run_thincurr_model import (
 
 
 def synthetic_mirnov_signal(
-    probe_details: xr.Dataset,
+    sensor_details: xr.Dataset,
     tracer: FilamentTracer,
     freq: float,
     working_directory: str,
@@ -49,7 +49,7 @@ def synthetic_mirnov_signal(
     If a mesh_file is not provided, does not include the conducting structure effects.
 
     Args:
-        probe_details (xr.Dataset): Dataset containing probe geometry in X,Y,Z coordinate, orientation in theta, phi,
+        sensor_details (xr.Dataset): Dataset containing probe geometry in X,Y,Z coordinate, orientation in theta, phi,
         filament (BaseFilament): Filament object defining the mode to simulate
         freq (float): Frequency of the mode to simulate
         working_directory (str): Directory to write and load ThinCurr files
@@ -74,7 +74,7 @@ def synthetic_mirnov_signal(
 ################################################################################################
 ################################################################################################
 def thincurr_synthetic_mirnov_signal(
-    probe_details: xr.Dataset,
+    sensor_details: xr.Dataset,
     mesh_model_file: str,
     eqdsk: geqdsk,
     freq: float,
@@ -95,7 +95,7 @@ def thincurr_synthetic_mirnov_signal(
 
 
     Args:
-        probe_details: Dataset containing probe geometry in X,Y,Z coordinate, orientation in theta, phi,
+        sensor_details: Dataset containing probe geometry in X,Y,Z coordinate, orientation in theta, phi,
         mesh_model: Path to the vessel model file for ThinCurr
         eqdsk: Equilibrium field data from a gEQDSK file
         freq: Frequency of the mode to simulate
@@ -119,7 +119,7 @@ def thincurr_synthetic_mirnov_signal(
 
     ######################################################################################
     # Generate sensors in OFT format
-    sensors = gen_OFT_sensors_file(probe_details, working_directory, debug=debug)
+    sensors = gen_OFT_sensors_file(sensor_details, working_directory, debug=debug)
 
     ######################################################################################
     # Prepare ThinCurr Model, Get finite element Mesh
@@ -134,7 +134,7 @@ def thincurr_synthetic_mirnov_signal(
         tw_mesh,
         freq,
         coil_currs,
-        probe_details,
+        sensor_details,
         mesh_model_file,
         sensor_obj,
         mode,
@@ -150,7 +150,7 @@ def thincurr_synthetic_mirnov_signal(
         doSave,
         debug,
         working_directory,
-        probe_details,
+        sensor_details,
         save_Ext,
     )
 
@@ -185,13 +185,13 @@ def thincurr_synthetic_mirnov_signal(
 if __name__ == "__main__":
     sensor_set = "C_MOD_ALL"
     # Load example probe details
-    probe_details_file = os.path.join(
+    sensor_details_file = os.path.join(
         PACKAGE_ROOT,
         "input_data",
         "cmod",
         f"sensor_details_{sensor_set}.nc",
     )
-    probe_details = xr.load_dataset(probe_details_file)
+    sensor_details = xr.load_dataset(sensor_details_file)
 
     # Load example equilibrium
     file_geqdsk = "g1051202011.1000"
@@ -239,7 +239,7 @@ if __name__ == "__main__":
         return Z_C(w) / Z_total(w)  # Voltage across capacitor / input voltage
 
     # Frequency response dictionary for each sensor
-    freq_response_dict = {name: H for name in probe_details.coords["sensor"].values}
+    freq_response_dict = {name: H for name in sensor_details.coords["sensor"].values}
 
     ###################
     debug = True
@@ -252,7 +252,7 @@ if __name__ == "__main__":
 
     # Run ThinCurr sensor response simulation
     sensors_bode = thincurr_synthetic_mirnov_signal(
-        probe_details,
+        sensor_details,
         mesh_model,
         file_geqdsk,
         freq,

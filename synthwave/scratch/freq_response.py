@@ -37,7 +37,7 @@ if __name__ == "__main__":
         resistivity_list=[1e-6],
     )
 
-    probe_details = xr.Dataset(
+    sensor_details = xr.Dataset(
         data_vars={
             "position": (
                 ("sensor", "coord"),
@@ -69,12 +69,12 @@ if __name__ == "__main__":
         },
     )
     gen_OFT_sensors_file(
-        probe_details=probe_details,
+        sensor_details=sensor_details,
         working_directory=EXAMPLE_DIR,
     )
 
     total_response, vessel_response, direct_response = calc_frequency_response(
-        probe_details=probe_details,
+        sensor_details=sensor_details,
         tracer=toroidal_tracer,
         freq=10e3,
         mesh_file=torus_mesh_file,
@@ -87,7 +87,7 @@ if __name__ == "__main__":
     direct_response_angle = np.angle(direct_response)
 
     # Print the results
-    for i, sensor in enumerate(probe_details.sensor.values):
+    for i, sensor in enumerate(sensor_details.sensor.values):
         print(f"Sensor: {sensor}")
         print(f"  Total Response Angle: {total_response_angle[i]:.2f} rad")
         print(f"  Vessel Response Angle: {vessel_response_angle[i]:.2f} rad")

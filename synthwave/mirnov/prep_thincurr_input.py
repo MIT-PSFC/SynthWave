@@ -60,8 +60,8 @@ def gen_OFT_sensors_file(
     sensor_details: xr.Dataset,
     working_directory: str,
     sensor_file_path: Optional[str] = None,
-    debug: bool = True,
-):
+    debug: Optional[bool] = False,
+) -> str:
     """
     Write sensor details to OFT format file for ThinCurr
     OFT calls them sensors, but the more common terminology is sensors.
@@ -69,7 +69,7 @@ def gen_OFT_sensors_file(
     Args:
         sensor_details (xr.Dataset): Dataset containing sensor location and normal orientation in x,y,z
         working_directory (str): Directory to save the OFT sensor file
-        debug (Optional[bool], default=True): If True, print debug information
+        debug (Optional[bool], default=False): If True, print debug information
 
     Returns:
         str: Path to the generated OFT sensor file
