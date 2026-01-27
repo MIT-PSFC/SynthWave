@@ -17,13 +17,27 @@ from synthwave.magnetic_geometry.equilibrium_field import (
 class FilamentTracer(ABC):
     """Abstract class for filament representation."""
 
-    def __init__(self, m: int, n: int, base_num_points: Optional[int] = 800):
+    def __init__(
+        self,
+        m: int,
+        n: int,
+        base_num_points: Optional[int] = 800,
+        scale_points: Optional[bool] = True,
+        prevent_synthetic_structure: Optional[bool] = True,
+    ):
         self.m = m
         self.n = n
-        self.num_points = nextprime(base_num_points * self.m / self.n)
+
+        num_points = base_num_points
+        if scale_points:
+            num_points = int(base_num_points * self.m / self.n)
+        if prevent_synthetic_structure:
+            num_points = nextprime(num_points)
+
+        self.num_points = num_points
 
     @abstractmethod
-    def trace(self) -> tuple[np.ndarray, np.ndarray]:
+    def trace(self, num_points: Optional[int] = None) -> tuple[np.ndarray, np.ndarray]:
         """Trace the filament and return the points in cylindrical coordinates (R, phi, Z), and the corresponding eta values."""
 
     def get_filament_ds(
@@ -122,7 +136,7 @@ class FilamentTracer(ABC):
 
         Args:
             num_filaments (int): Number of filaments to generate.
-            num_filament_points (Optional[int], default = None): Number of points per filament. If None, uses self.num_points.
+            num_points (Optional[int], default = None): Number of points per filament. If None, uses self.num_points.
             coordinate_system (str, default = "cartesian"): Coordinate system for output points. Options are "cylindrical" or "cartesian".
 
         Returns:
@@ -175,7 +189,9 @@ class ToroidalFilamentTracer(FilamentTracer):
         R0: float,
         Z0: float,
         a: float,
-        num_points: Optional[int] = 1000,
+        base_num_points: Optional[int] = 1000,
+        scale_points: Optional[bool] = True,
+        prevent_synthetic_structure: Optional[bool] = True,
     ):
         """Initialize a toroidal filament with a circular cross-section.
 
@@ -191,19 +207,26 @@ class ToroidalFilamentTracer(FilamentTracer):
             Vertical position of the magnetic axis
         a : float
             Minor radius of the circular cross-section
-        num_points : int, optional
-            Number of points to trace around the filament
-
+        base_num_points : int, optional
+            Base number of points to trace around the filament
+        scale_points : bool, optional
+            Whether to scale the number of points based on m/n ratio. If true, multiplies base_num_points by m/n to ensure adequate resolution.
+        prevent_synthetic_structure : bool, optional
+            Whether to adjust the number of points to the next prime number to avoid synthetic structures in simulations.
         """
-        super().__init__(m, n, num_points)
+        super().__init__(
+            m, n, int(base_num_points), scale_points, prevent_synthetic_structure
+        )
         self.R0 = R0
         self.Z0 = Z0
         self.a = a
 
-    def trace(self) -> tuple[np.ndarray, np.ndarray]:
+    def trace(self, num_points: Optional[int] = None) -> tuple[np.ndarray, np.ndarray]:
         # Create a circular filament around the magnetic axis
-        phi = np.linspace(0, 2 * np.pi * self.m / self.n, self.num_points)
-        filament_etas = np.linspace(0, 2 * np.pi, self.num_points)
+        if num_points is None:
+            num_points = self.num_points
+        phi = np.linspace(0, 2 * np.pi * self.m / self.n, num_points)
+        filament_etas = np.linspace(0, 2 * np.pi, num_points)
         R = self.R0 + self.a * np.cos(filament_etas)
         Z = self.Z0 + self.a * np.sin(filament_etas)
 
@@ -227,6 +250,8 @@ class EquilibriumFilamentTracer(FilamentTracer):
         n: int,
         eq_field: EquilibriumField,
         base_num_points: Optional[int] = 601,
+        scale_points: Optional[bool] = True,
+        prevent_synthetic_structure: Optional[bool] = True,
         default_trace_type: TraceType = TraceType.SINGLE,
     ):
         """Initialize an equilibrium filament.
@@ -241,17 +266,23 @@ class EquilibriumFilamentTracer(FilamentTracer):
             EquilibriumField object containing the magnetic field data
         base_num_points : int, optional
             Number of points to trace around the filament
+        scale_points : bool, optional
+            Whether to scale the number of points based on m/n ratio. If true, multiplies base_num_points by m/n to ensure adequate resolution.
+        prevent_synthetic_structure : bool, optional
+            Whether to adjust the number of points to the next prime number to avoid synthetic structures in simulations.
         default_trace_type : TraceType, optional
             Default tracing method to use
 
         """
-        super().__init__(m, n, int(base_num_points))
+        super().__init__(
+            m, n, int(base_num_points), scale_points, prevent_synthetic_structure
+        )
         self.eq_field = eq_field
         self.default_trace_type = default_trace_type
 
     def trace(
         self,
-        num_filament_points: Optional[int] = None,
+        num_points: Optional[int] = None,
         trace_type: TraceType = TraceType.SINGLE,
         helicity_sign: int = +1,
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -259,7 +290,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
 
         Parameters
         ----------
-        num_filament_points : int, optional
+        num_points : int, optional
             Number of points to use for tracing a single poloidal turn of the filament.
             If ``None``, the value stored in ``self.num_points`` is used.
         trace_type : EquilibriumFilamentTracer.TraceType, optional
@@ -278,8 +309,8 @@ class EquilibriumFilamentTracer(FilamentTracer):
 
         """
 
-        if num_filament_points is None:
-            num_filament_points = self.num_points
+        if num_points is None:
+            num_points = self.num_points
 
         # Correction for m/n as integer multiples (otherwise leads to ``wandering'' filaments)
         ratio = Fraction(self.m, self.n)
@@ -287,8 +318,8 @@ class EquilibriumFilamentTracer(FilamentTracer):
         n_local = ratio.denominator
         psi_q = self.eq_field.get_psi_of_q(m_local / n_local)
 
-        filament_etas = np.linspace(0, 2 * np.pi, self.num_points)
-        poloidal_points = np.zeros((self.num_points, 3))  # R, Z, a
+        filament_etas = np.linspace(0, 2 * np.pi, num_points)
+        poloidal_points = np.zeros((num_points, 3))  # R, Z, a
 
         # Start at the outboard midplane, slightly outside magnetic axis
         Z_start = self.eq_field.eqdsk.zmagx
