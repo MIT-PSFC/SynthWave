@@ -219,3 +219,5 @@ synthwave/tests/figures/**/*.png
 
 # scratch
 thincurr_scratch/
+synthwave/input_data
+synthwave/vessel_caches
