@@ -73,7 +73,7 @@ if __name__ == "__main__":
         working_directory=EXAMPLE_DIR,
     )
 
-    total_response, vessel_response, direct_response = calc_frequency_response(
+    total_response, direct_response, vessel_response = calc_frequency_response(
         sensor_details=sensor_details,
         tracer=toroidal_tracer,
         freq=10e3,
