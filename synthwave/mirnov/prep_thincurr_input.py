@@ -64,7 +64,7 @@ def gen_OFT_sensors_file(
 ) -> str:
     """
     Write sensor details to OFT format file for ThinCurr.
-    OFT calls them "sensors", but they are often referred to as Mirnov coils in the wider literature.
+    OFT uses the term "sensors", but these are often referred to as Mirnov coils in the wider literature.
 
     Args:
         sensor_details (xr.Dataset): Dataset containing sensor location and normal orientation in x,y,z
