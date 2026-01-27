@@ -7,6 +7,10 @@ import tempfile
 
 import pyvista
 pyvista.OFF_SCREEN = True
+# Configure for headless operation - suppress VTK warnings
+pyvista.set_error_output_file('/dev/null')
+import vtk
+vtk.vtkObject.GlobalWarningDisplayOff()
 
 from synthwave import PACKAGE_ROOT
 import freeqdsk
@@ -589,13 +593,14 @@ class TestEquilibriumFilamentTracer:
         plotter = pyvista.Plotter()
 
         # Plot some filaments
-        for ind, filament in enumerate(equilibrium_tracer.get_filament_list(num_filaments=6)):
+        filament_list, current_list = equilibrium_tracer.get_filament_list(num_filaments=6)
+        for ind, filament in enumerate(filament_list):
             filament_spline = pyvista.Spline(filament, len(filament))
 
             plotter.add_mesh(
                 filament_spline,
                 color=plt.get_cmap("plasma")(
-                    (currents.real[ind] / np.max(currents.real) + 1)
+                    (current_list[ind].real / np.max([c.real for c in current_list]) + 1)
                     / 2
                 ),
                 line_width=6,
