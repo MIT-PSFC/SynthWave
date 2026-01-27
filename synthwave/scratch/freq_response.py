@@ -29,7 +29,7 @@ if __name__ == "__main__":
 
     # Create 'oft_in.xml' file with icoil definitions
     toroidal_tracer = ToroidalFilamentTracer(2, 1, MAJOR_RADIUS, 0, MINOR_RADIUS - 0.1)
-    filament_list = toroidal_tracer.get_filament_list(num_filaments=10)
+    filament_list, _ = toroidal_tracer.get_filament_list(num_filaments=10)
 
     gen_OFT_filament_and_eta_file(
         working_directory=EXAMPLE_DIR,
@@ -65,7 +65,7 @@ if __name__ == "__main__":
             "sensor": np.array(["sensor_x", "sensor_y", "sensor_z"]),
         },
         attrs={
-            "probe_set_name": "test_probes",
+            "sensor_set_name": "test_probes",
         },
     )
     gen_OFT_sensors_file(
