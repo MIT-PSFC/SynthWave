@@ -84,10 +84,31 @@ else
     TARBALL="OpenFUSIONToolkit_${OFT_VERSION}-${PLATFORM}.tar.gz"
     URL="https://github.com/OpenFUSIONToolkit/OpenFUSIONToolkit/releases/download/${OFT_VERSION}/${TARBALL}"
     
+    # Expected SHA256 checksums for v1.0.0-beta6
+    # These should be verified against official release checksums
+    declare -A CHECKSUMS=(
+        ["OpenFUSIONToolkit_v1.0.0-beta6-Ubuntu_22_04-GNU-x86_64.tar.gz"]="VERIFY_CHECKSUM_BEFORE_USE"
+        ["OpenFUSIONToolkit_v1.0.0-beta6-Centos_7-GNU-x86_64.tar.gz"]="VERIFY_CHECKSUM_BEFORE_USE"
+    )
+    
     TEMP_DIR=$(mktemp -d)
     trap "rm -rf $TEMP_DIR" EXIT
     
     curl -L -o "$TEMP_DIR/$TARBALL" "$URL" || wget -O "$TEMP_DIR/$TARBALL" "$URL"
+    
+    # Verify checksum if available
+    if [ "${CHECKSUMS[$TARBALL]}" != "VERIFY_CHECKSUM_BEFORE_USE" ] && [ -n "${CHECKSUMS[$TARBALL]}" ]; then
+        info "Verifying checksum..."
+        if command -v sha256sum &>/dev/null; then
+            echo "${CHECKSUMS[$TARBALL]}  $TEMP_DIR/$TARBALL" | sha256sum -c - || error "Checksum verification failed!"
+            success "Checksum verified"
+        else
+            warn "sha256sum not available, skipping checksum verification"
+        fi
+    else
+        warn "No checksum available for $TARBALL - proceeding without verification"
+        warn "Consider verifying the download manually or updating the CHECKSUMS array"
+    fi
     
     info "Extracting..."
     tar -xzf "$TEMP_DIR/$TARBALL" -C "$TEMP_DIR"
