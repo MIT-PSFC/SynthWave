@@ -196,6 +196,7 @@ export LD_LIBRARY_PATH="${OFT_DIR}/bin:${LD_LIBRARY_PATH:-}"
 
 uv sync "${SYNC_ARGS[@]}" || uv sync
 success "Python packages installed"
+uv run pre-commit install
 
 # Verify
 header "Verifying installation"
