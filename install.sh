@@ -85,10 +85,11 @@ else
     URL="https://github.com/OpenFUSIONToolkit/OpenFUSIONToolkit/releases/download/${OFT_VERSION}/${TARBALL}"
     
     # Expected SHA256 checksums for v1.0.0-beta6
-    # These should be verified against official release checksums
+    # TODO: Replace placeholder values with actual SHA256 checksums from official release
+    # To generate checksums: sha256sum OpenFUSIONToolkit_*.tar.gz
     declare -A CHECKSUMS=(
-        ["OpenFUSIONToolkit_v1.0.0-beta6-Ubuntu_22_04-GNU-x86_64.tar.gz"]="VERIFY_CHECKSUM_BEFORE_USE"
-        ["OpenFUSIONToolkit_v1.0.0-beta6-Centos_7-GNU-x86_64.tar.gz"]="VERIFY_CHECKSUM_BEFORE_USE"
+        ["OpenFUSIONToolkit_v1.0.0-beta6-Ubuntu_22_04-GNU-x86_64.tar.gz"]=""
+        ["OpenFUSIONToolkit_v1.0.0-beta6-Centos_7-GNU-x86_64.tar.gz"]=""
     )
     
     TEMP_DIR=$(mktemp -d)
@@ -97,7 +98,7 @@ else
     curl -L -o "$TEMP_DIR/$TARBALL" "$URL" || wget -O "$TEMP_DIR/$TARBALL" "$URL"
     
     # Verify checksum if available
-    if [ "${CHECKSUMS[$TARBALL]}" != "VERIFY_CHECKSUM_BEFORE_USE" ] && [ -n "${CHECKSUMS[$TARBALL]}" ]; then
+    if [ -n "${CHECKSUMS[$TARBALL]}" ]; then
         info "Verifying checksum..."
         if command -v sha256sum &>/dev/null; then
             echo "${CHECKSUMS[$TARBALL]}  $TEMP_DIR/$TARBALL" | sha256sum -c - || error "Checksum verification failed!"
@@ -106,8 +107,8 @@ else
             warn "sha256sum not available, skipping checksum verification"
         fi
     else
-        warn "No checksum available for $TARBALL - proceeding without verification"
-        warn "Consider verifying the download manually or updating the CHECKSUMS array"
+        warn "No checksum configured for $TARBALL - proceeding without verification"
+        warn "To improve security, add SHA256 checksums to the CHECKSUMS array in this script"
     fi
     
     info "Extracting..."
