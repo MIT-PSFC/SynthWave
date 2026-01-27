@@ -14,7 +14,6 @@ repos:
         language: system
         types: [python]
         files: "^synthwave/"
-        exclude: "^synthwave/tests/"
       - id: ruff_check
         name: ruff_check
         entry: poetry run ruff check --fix
