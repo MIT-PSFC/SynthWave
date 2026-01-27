@@ -1,6 +1,7 @@
 from fractions import Fraction
 import pytest
 import numpy as np
+from sympy import nextprime
 import os
 import tempfile
 
@@ -22,33 +23,51 @@ class TestToroidalFilamentTracer:
 
     fig_dir = os.path.join(FIG_DIR, "test_toroidal_filament_tracer")
 
-    def test_init(self):
+    @pytest.mark.parametrize("scale_points", [True, False])
+    @pytest.mark.parametrize("prevent_synthetic_structure", [True, False])
+    def test_init(self, scale_points, prevent_synthetic_structure):
         """Test initialization of ToroidalFilamentTracer."""
         m, n = 2, 1
         R0, Z0, a = 1.8, 0.0, 0.5
-        num_points = 100
+        base_num_points = 100
 
-        tracer = ToroidalFilamentTracer(m, n, R0, Z0, a, num_points)
+        tracer = ToroidalFilamentTracer(m, n, R0, Z0, a, base_num_points, scale_points=scale_points, prevent_synthetic_structure=prevent_synthetic_structure)
 
         assert tracer.m == m
         assert tracer.n == n
         assert tracer.R0 == R0
         assert tracer.Z0 == Z0
         assert tracer.a == a
-        assert tracer.num_points == num_points
+        
+        expected_points = base_num_points
+        if scale_points:
+            expected_points = int(base_num_points * m / n)
+        if prevent_synthetic_structure:
+            expected_points = nextprime(expected_points)
 
-    def test_trace_basic(self):
+        assert tracer.num_points == expected_points
+
+    @pytest.mark.parametrize("scale_points", [True, False])
+    @pytest.mark.parametrize("prevent_synthetic_structure", [True, False])
+    def test_trace_basic(self, scale_points, prevent_synthetic_structure):
         """Test basic tracing functionality."""
         m, n = 2, 1
         R0, Z0, a = 1.8, 0.0, 0.5
-        num_points = 100
+        base_num_points = 100
 
-        filament = ToroidalFilamentTracer(m, n, R0, Z0, a, num_points)
+        filament = ToroidalFilamentTracer(m, n, R0, Z0, a, base_num_points, scale_points=scale_points, prevent_synthetic_structure=prevent_synthetic_structure)
         points, etas = filament.trace()
         
         # Check shape
-        assert points.shape == (num_points, 3)
-        assert etas.shape == (num_points,)
+        expected_points = base_num_points
+        if scale_points:
+            expected_points = int(base_num_points * m / n)
+        if prevent_synthetic_structure:
+            expected_points = nextprime(expected_points)
+
+        assert points.shape[1] == 3
+        assert points.shape[0] == expected_points
+        assert etas.shape[0] == points.shape[0]
     
     @pytest.mark.parametrize("R0", [1.5, 2.0, 2.5])
     @pytest.mark.parametrize("Z0", [0.0, 0.1, -0.1])
@@ -57,9 +76,9 @@ class TestToroidalFilamentTracer:
     def test_trace_circular_geometry(self, R0, Z0, a, mode):
         """Test that the filament traces a circle in the poloidal plane."""
         m, n = mode
-        num_points = 100
+        base_num_points = 100
 
-        tracer = ToroidalFilamentTracer(m, n, R0, Z0, a, num_points)
+        tracer = ToroidalFilamentTracer(m, n, R0, Z0, a, base_num_points, scale_points=False, prevent_synthetic_structure=False)
         points, etas = tracer.trace()
 
         R, phi, Z = points[:, 0], points[:, 1], points[:, 2]
@@ -74,7 +93,7 @@ class TestToroidalFilamentTracer:
         expected_phi_range = 2 * np.pi * m / n
         np.testing.assert_allclose(phi_range, expected_phi_range, rtol=1e-10)
 
-        np.testing.assert_allclose(etas, np.linspace(0, 2 * np.pi, num_points), rtol=1e-10)
+        np.testing.assert_allclose(etas, np.linspace(0, 2 * np.pi, base_num_points), rtol=1e-10)
 
     def test_trace_specific_points_2_1(self):
         """Test that specific points are at expected locations."""
@@ -82,7 +101,7 @@ class TestToroidalFilamentTracer:
         R0, Z0, a = 1.8, 0.0, 0.5
         num_points = 9  # Use 9 points for easy checking. This gives points at 0, π/4, π/2, ..., 2π
         
-        tracer = ToroidalFilamentTracer(m, n, R0, Z0, a, num_points)
+        tracer = ToroidalFilamentTracer(m, n, R0, Z0, a, num_points, scale_points=False, prevent_synthetic_structure=False)
         points, etas = tracer.trace()
 
         R, phi, Z = points[:, 0], points[:, 1], points[:, 2]
@@ -115,7 +134,7 @@ class TestToroidalFilamentTracer:
         R0, Z0, a = 1.8, 0.0, 0.5
         num_points = 13  # Use 13 points for easy checking. This gives points at 0, π/6, π/3, ..., 2π
         
-        tracer = ToroidalFilamentTracer(m, n, R0, Z0, a, num_points)
+        tracer = ToroidalFilamentTracer(m, n, R0, Z0, a, num_points, scale_points=False, prevent_synthetic_structure=False)
         points, etas = tracer.trace()
 
         R, phi, Z = points[:, 0], points[:, 1], points[:, 2]
@@ -146,14 +165,14 @@ class TestToroidalFilamentTracer:
         m, n = 1, 1
         R0, Z0, a = 2.0, 0.0, 0.5
 
-        tracer = ToroidalFilamentTracer(m, n, R0, Z0, a, num_points=100)
+        tracer = ToroidalFilamentTracer(m, n, R0, Z0, a, base_num_points=100, scale_points=False, prevent_synthetic_structure=False)
 
         # Test with default number of points
         points_default, _ = tracer.trace()
         assert points_default.shape[0] == 100
         
         # Test with custom number of points
-        points_custom, _ = tracer.trace(num_filament_points=200)
+        points_custom, _ = tracer.trace(num_points=200)
         assert points_custom.shape[0] == 200
         
         # Both should have same geometry, just different resolution
@@ -179,7 +198,7 @@ class TestToroidalFilamentTracer:
             os.makedirs(fig_dir)
 
         toroidal_tracer = ToroidalFilamentTracer(
-            mode["m"], mode["n"], major_radius, 0, minor_radius, num_points=100
+            mode["m"], mode["n"], major_radius, 0, minor_radius, base_num_points=100
         )
 
         filament_ds = toroidal_tracer.get_filament_ds(num_filaments=num_filaments, coordinate_system="toroidal")
@@ -282,7 +301,7 @@ class TestToroidalFilamentTracer:
             os.makedirs(fig_dir)
 
         toroidal_tracer = ToroidalFilamentTracer(
-            mode["m"], mode["n"], major_radius, 0, minor_radius, num_points=100
+            mode["m"], mode["n"], major_radius, 0, minor_radius, base_num_points=100
         )
 
         filament_ds = toroidal_tracer.get_filament_ds(num_filaments=num_filaments, coordinate_system="cartesian")
@@ -345,30 +364,49 @@ class TestEquilibriumFilamentTracer:
     with open(eqdsk_file, 'r') as f:
         eqdsk = freeqdsk.geqdsk.read(f)
 
-    def test_init(self):
+    @pytest.mark.parametrize("scale_points", [True, False])
+    @pytest.mark.parametrize("prevent_synthetic_structure", [True, False])
+    def test_init(self, scale_points, prevent_synthetic_structure):
         """Test initialization of EquilibriumFilamentTracer."""
 
         eq_field = EquilibriumField(self.eqdsk)
 
         m, n = 2, 1
-        tracer = EquilibriumFilamentTracer(m, n, eq_field, num_points=100)
+        base_num_points = 100
+        tracer = EquilibriumFilamentTracer(m, n, eq_field, base_num_points, scale_points=scale_points, prevent_synthetic_structure=prevent_synthetic_structure)
 
         assert tracer.m == m
         assert tracer.n == n
         assert tracer.eq_field == eq_field
-        assert tracer.num_points == 100
 
-    def test_trace_basic(self):
+        expected_points = base_num_points
+        if scale_points:
+            expected_points = int(base_num_points * m / n)
+        if prevent_synthetic_structure:
+            expected_points = nextprime(expected_points)
+
+        assert tracer.num_points == expected_points
+
+    @pytest.mark.parametrize("scale_points", [True, False])
+    @pytest.mark.parametrize("prevent_synthetic_structure", [True, False])
+    def test_trace_basic(self, scale_points, prevent_synthetic_structure):
         """Test basic tracing functionality."""
         eq_field = EquilibriumField(self.eqdsk)
 
         m, n = 2, 1
-        tracer = EquilibriumFilamentTracer(m, n, eq_field, num_points=100)
+        base_num_points = 100
+        tracer = EquilibriumFilamentTracer(m, n, eq_field, base_num_points=base_num_points, scale_points=scale_points, prevent_synthetic_structure=prevent_synthetic_structure)
         points, etas = tracer.trace()
+
+        expected_points = base_num_points
+        if scale_points:
+            expected_points = int(base_num_points * m / n)
+        if prevent_synthetic_structure:
+            expected_points = nextprime(expected_points)
         
         # Check shape
-        assert points.shape == (100, 3)
-        assert etas.shape == (100,)
+        assert points.shape == (expected_points, 3)
+        assert etas.shape == (expected_points,)
 
     @pytest.mark.parametrize("mode", [{"m": 1, "n": 1}, {"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": 3, "n": 1}, {"m": 4, "n": 3}, {"m": 5, "n": 4}, {"m": 4, "n": 1}, {"m": 5, "n": 1}])
     def test_points_and_currents(self, mode):
@@ -382,7 +420,7 @@ class TestEquilibriumFilamentTracer:
             os.makedirs(fig_dir)
 
         equilibrium_tracer = EquilibriumFilamentTracer(
-            mode["m"], mode["n"], eq_field, num_points=100
+            mode["m"], mode["n"], eq_field, base_num_points=100
         )
 
         filament_ds = equilibrium_tracer.get_filament_ds(num_filaments=num_filaments, coordinate_system="toroidal")
@@ -494,7 +532,7 @@ class TestEquilibriumFilamentTracer:
             os.makedirs(fig_dir)
 
         equilibrium_tracer = EquilibriumFilamentTracer(
-            mode["m"], mode["n"], eq_field, num_points=200
+            mode["m"], mode["n"], eq_field, base_num_points=200
         )
 
         filament_ds = equilibrium_tracer.get_filament_ds(num_filaments=num_filaments, coordinate_system="cartesian")
@@ -573,6 +611,8 @@ class TestAllFilamentTracers:
 
     fig_dir = os.path.join(FIG_DIR, "test_all_filament_tracers")
 
+    
+
     @pytest.mark.parametrize("tracer_class, tracer_args", [
         (ToroidalFilamentTracer, (1.8, 0.0, 0.5, 400)),
         (EquilibriumFilamentTracer, (EquilibriumField(TestEquilibriumFilamentTracer.eqdsk), 400))
@@ -636,7 +676,7 @@ class TestAllFilamentTracers:
         """Test that the closest point on the filament to a given point has the same current value."""
         tracer_args = (mode["m"], mode["n"]) + tracer_args
         tracer = tracer_class(*tracer_args)
-        filament_ds = tracer.get_fila(num_filaments=10, coordinate_system="cartesian")
+        filament_ds = tracer.get_filament_ds(num_filaments=10, coordinate_system="cartesian")
 
         x_vals_all = filament_ds["x"].values
         y_vals_all = filament_ds["y"].values
