@@ -102,8 +102,8 @@ def calc_frequency_response(
 
     Returns:
         total_response (np.ndarray): Complex array of total sensor signals [T]
-        vessel_response (np.ndarray): Complex array of sensor signals due to vessel currents [T]
         direct_response (np.ndarray): Complex array of sensor signals due to direct filament coupling [T]
+        vessel_response (np.ndarray): Complex array of sensor signals due to vessel currents [T]
     """
 
     # Create thin wall model
@@ -312,8 +312,7 @@ def run_frequency_scan(
     # Contribuio from the coil current directly to the sensor
     sensor_signals[:, :] += np.dot(coil_currs, Msc)
 
-    # for i in range(sensor_signals.shape[1]):
-    #     print('Real: {0:13.5E}, Imaginary: {1:13.5E}'.format(*sensor_signals[:,i]))
+    # To debug, you can iterate over sensor_signals and inspect their real and imaginary parts.
     sensor_signals = (
         sensor_signals[0, :] + 1j * sensor_signals[1, :]
     )  # Combine real and imaginary parts
@@ -532,7 +531,7 @@ def plot_sensor_output(
     # Load in saved sensor signals from netCDF format and plot
 
     fName = working_files_directory + "probe_signals_%s_m%02d_n%02d_f%1.1ekHz%s.nc" % (
-        sensor_details.attrs["probe_set_name"],
+        sensor_details.attrs["sensor_set_name"],
         mode["m"],
         mode["n"],
         freq / 1e3,

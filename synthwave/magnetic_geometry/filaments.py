@@ -136,7 +136,6 @@ class FilamentTracer(ABC):
 
         Args:
             num_filaments (int): Number of filaments to generate.
-            num_points (Optional[int], default = None): Number of points per filament. If None, uses self.num_points.
             coordinate_system (str, default = "cartesian"): Coordinate system for output points. Options are "cylindrical" or "cartesian".
 
         Returns:
