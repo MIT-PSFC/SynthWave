@@ -209,8 +209,9 @@ __marimo__/
 # VSCode
 .vscode/
 
-# Symlink
+# Install
 submodules/OpenFUSIONToolkit
+setup_env.sh
 
 # Tests
 synthwave/tests/figures/*.png
