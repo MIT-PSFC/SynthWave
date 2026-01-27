@@ -81,8 +81,8 @@ def calc_frequency_response(
     freq: float,
     mesh_file: str,
     working_directory: str,
+    sensor_file_path: Optional[str] = None,
     debug_plot_path: Optional[str] = None,
-    sensor_file_path: Optional[str] = None
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Calculate the measured frequency response at the given sensors due to filaments defined by the tracer.
@@ -93,12 +93,12 @@ def calc_frequency_response(
 
     Args:
         oft_env (OFT_env): OFT environment object, can only be created once per process
-        sensor_file_path (str): Path to the sensor file for ThinCurr
         tracer (FilamentTracer): FilamentTracer object defining the filaments to simulate
         freq (float): Frequency to simulate [Hz]
         mesh_file (str): Path to the vessel mesh file for ThinCurr
         working_directory (str): Directory to read/write ThinCurr files
-        sensor_details (xr.Dataset): Dataset containing sensor location and normal orientation in x,y,z geometry
+        sensor_file_path (str): Path to the sensor file for ThinCurr
+        debug_plot_path (str, optional): If provided, path prefix to save debug plots
 
     Returns:
         total_response (np.ndarray): Complex array of total sensor signals [T]
@@ -200,6 +200,8 @@ def calc_frequency_response(
                 render_points_as_spheres=True,
                 opacity=1,
             )
+
+        sensor_details = sensor_obj["details"]  # Hack for now
 
         # Plot sensors
         for sensor in sensor_details.sensor:
