@@ -88,8 +88,8 @@ else
     # TODO: Replace placeholder values with actual SHA256 checksums from official release
     # To generate checksums: sha256sum OpenFUSIONToolkit_*.tar.gz
     declare -A CHECKSUMS=(
-        ["OpenFUSIONToolkit_v1.0.0-beta6-Ubuntu_22_04-GNU-x86_64.tar.gz"]=""
-        ["OpenFUSIONToolkit_v1.0.0-beta6-Centos_7-GNU-x86_64.tar.gz"]=""
+        ["OpenFUSIONToolkit_v1.0.0-beta6-Ubuntu_22_04-GNU-x86_64.tar.gz"]="a4242d9a809d052e7241e351b0462dbc57e55a3caa4daa2407faa09126dc6f56"
+        ["OpenFUSIONToolkit_v1.0.0-beta6-Centos_7-GNU-x86_64.tar.gz"]="0f1fadb215d2bb15aeb2d8c68e5c03f8dc33061739d75e2facd057d56bda150d"
     )
     
     TEMP_DIR=$(mktemp -d)
