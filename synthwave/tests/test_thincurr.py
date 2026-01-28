@@ -40,7 +40,7 @@ def oft_env_fixture():
 @pytest.mark.parametrize("major_radius", [1, 20])
 def test_toroidal_angles(mode, major_radius, oft_env_fixture):
     minor_radius_vessel = 0.35
-    minor_radius_probe = 0.34
+    minor_radius_sensor = 0.34
     minor_radius_plasma = 0.3
 
     num_filaments = nextprime(64)
@@ -53,20 +53,24 @@ def test_toroidal_angles(mode, major_radius, oft_env_fixture):
                 np.array(
                     [
                         [
-                            major_radius + minor_radius_probe,
+                            major_radius + minor_radius_sensor,
                             0.0,
                             0.0,
                         ],  # sensor on x axis
-                        [0, major_radius + minor_radius_probe, 0.0],  # sensor on y axis
+                        [
+                            0,
+                            major_radius + minor_radius_sensor,
+                            0.0,
+                        ],  # sensor on y axis
                         [
                             major_radius,
                             0,
-                            minor_radius_probe,
+                            minor_radius_sensor,
                         ],  # sensor up top on x axis
                         [
                             0,
                             major_radius,
-                            minor_radius_probe,
+                            minor_radius_sensor,
                         ],  # sensor up top on y axis
                     ]
                 ),

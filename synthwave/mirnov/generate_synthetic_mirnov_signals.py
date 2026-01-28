@@ -2,12 +2,12 @@
 Main script to generate synthetic mirnov signals using ThinCurr
 Requires a valid conducting structure mesh for ThinCurr
 and an equilibrium file in gEQDSK format
-and a set of probe locations and orientations
+and a set of sensor locations and orientations
 and a mode to simulate (m,n)
 and a resistivity for the conducting structure
 and a frequency to simulate
 
-Outputs a netcdf file with the real and imaginary components of the probe signals in [T]
+Outputs a netcdf file with the real and imaginary components of the sensor signals in [T]
 and optional plots of the mesh, filaments, and sensors
 
 Original by Rian Chandra,
@@ -45,11 +45,11 @@ def synthetic_mirnov_signal(
     debug: Optional[bool] = False,
 ) -> xr.Dataset:
     """
-    Calculate the real and imaginary components of the magnetic probe signals using ThinCurr.
+    Calculate the real and imaginary components of the magnetic sensor signals using ThinCurr.
     If a mesh_file is not provided, does not include the conducting structure effects.
 
     Args:
-        sensor_details (xr.Dataset): Dataset containing probe geometry in X,Y,Z coordinate, orientation in theta, phi,
+        sensor_details (xr.Dataset): Dataset containing sensor geometry in X,Y,Z coordinate, orientation in theta, phi,
         filament (BaseFilament): Filament object defining the mode to simulate
         freq (float): Frequency of the mode to simulate
         working_directory (str): Directory to write and load ThinCurr files
@@ -58,7 +58,7 @@ def synthetic_mirnov_signal(
         debug (Optional[bool], default=False): If True, print debug information
 
     Returns:
-        xr.Dataset: Dataset containing the simulated probe signals in [T/s].
+        xr.Dataset: Dataset containing the simulated sensor signals in [T/s].
     """
 
     # Prepare filament currents and put them in OFT format
@@ -90,12 +90,12 @@ def thincurr_synthetic_mirnov_signal(
     plotParams: dict = {"clim_J": [0, 0.5]},
 ) -> xr.Dataset:
     """
-    Calculate the real and imaginary components of the magnetic probe signals using ThinCurr.
+    Calculate the real and imaginary components of the magnetic sensor signals using ThinCurr.
     Assumes that a valid conducting structure mesh is provided.
 
 
     Args:
-        sensor_details: Dataset containing probe geometry in X,Y,Z coordinate, orientation in theta, phi,
+        sensor_details: Dataset containing sensor geometry in X,Y,Z coordinate, orientation in theta, phi,
         mesh_model: Path to the vessel model file for ThinCurr
         eqdsk: Equilibrium field data from a gEQDSK file
         freq: Frequency of the mode to simulate
@@ -109,7 +109,7 @@ def thincurr_synthetic_mirnov_signal(
         plotParams: Dictionary with plotting parameters, e.g. {'clim_J': [0, 0.5]} for color limits of eddy current plot
         working_directory: Directory to store and load mesh and temporary files from
     Returns:
-        xr.Dataset: Dataset containing the simulated probe signals in [T/s].
+        xr.Dataset: Dataset containing the simulated sensor signals in [T/s].
     """
 
     ######################################################################################
@@ -184,7 +184,7 @@ def thincurr_synthetic_mirnov_signal(
 # Example code to generate a response in the C-Mod mesh
 if __name__ == "__main__":
     sensor_set = "C_MOD_ALL"
-    # Load example probe details
+    # Load example sensor details
     sensor_details_file = os.path.join(
         PACKAGE_ROOT,
         "input_data",
@@ -273,7 +273,7 @@ if __name__ == "__main__":
         print(
             f"Simulated frequency: {freq / 1e3} kHz, mode (m,n)=({mode['m']},{mode['n']})"
         )
-        print("Probe signals [T/s]:")
+        print("sensor signals [T/s]:")
         for i, sensor_name in enumerate(sensors_bode.sensor.values):
             print(
                 f"Sensor: {sensor_name}, Real: {sensors_bode.sel(sensor=sensor_name).signal.values.real:.2e},"
