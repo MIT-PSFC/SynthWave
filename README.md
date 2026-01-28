@@ -29,7 +29,7 @@ These sensors represent the high-frequency Mirnovs and vacuum vessel conducting 
 conducting meshes for the C-Mod, HBT-EP, DIII-D, and SPARC tokamaks can be provided to users with the appropriate permissions, on request. 
 
 The simulation will use a fillamentary representation of the plasma on the appropriate rational surface, tracing out the helicity of the field lines,
-oscillating at a fixed frequency (10kHz, in the example). The measured signal across the Mirnov probes will include the direct inductive coupling
+oscillating at a fixed frequency (10kHz, in the example). The measured signal across the Mirnov sensors will include the direct inductive coupling
 to the ``plasma'' filaments, as well as coupling to the induced eddy current response in the conducting mesh.
 
 Given the provided input files, the magnitude of the output signal across the sensor set should look like the below:

@@ -65,7 +65,7 @@ if __name__ == "__main__":
             "sensor": np.array(["sensor_x", "sensor_y", "sensor_z"]),
         },
         attrs={
-            "sensor_set_name": "test_probes",
+            "sensor_set_name": "test_sensors",
         },
     )
     gen_OFT_sensors_file(
