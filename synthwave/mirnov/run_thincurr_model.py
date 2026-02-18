@@ -82,6 +82,7 @@ def calc_frequency_response(
     mesh_file: str,
     working_directory: str,
     sensor_file_path: Optional[str] = None,
+    sensor_details: Optional[xr.Dataset] = None,
     debug_plot_path: Optional[str] = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -187,7 +188,7 @@ def calc_frequency_response(
         plotter.screenshot(f"{debug_plot_path}_vessel.png", transparent_background=True)
 
         # Plot some filaments
-        plot_filaments, plot_currents = tracer.get_filament_list(num_filaments=6)
+        plot_filaments, plot_currents = tracer.get_filament_list(num_filaments=20)
         for filament, current in zip(plot_filaments, plot_currents):
             filament_spline = pyvista.Spline(filament, len(filament))
 
@@ -201,7 +202,7 @@ def calc_frequency_response(
                 opacity=1,
             )
 
-        sensor_details = sensor_obj["details"]  # Hack for now
+        # sensor_details = sensor_obj["details"]  # Hack for now
 
         # Plot sensors
         for sensor in sensor_details.sensor:
@@ -219,6 +220,9 @@ def calc_frequency_response(
 
         # Have the view be top-down
         plotter.view_xy()
+
+        plotter.render()
+
         plotter.screenshot(
             f"{debug_plot_path}_topdown.png", transparent_background=True
         )
@@ -229,8 +233,24 @@ def calc_frequency_response(
             (0, 0, 0),  # Focal point at the origin
             (0, 0, 1),  # View up direction along z-axis
         ]
+
+        plotter.render()
+
         plotter.screenshot(
             f"{debug_plot_path}_xzplane.png", transparent_background=True
+        )
+
+        # # Have the view be a slice through the xz plane
+        # plotter.camera_position = [
+        #     (0, -0.1, 0),  # Position of the camera, set a little back on y-axis
+        #     (.8, 0, .5),  # Focal point at the mag-ax
+        #     (1, 0, 0),  # View up direction along x-axis
+        # ]
+        plotter.view_zy()
+        plotter.render()
+
+        plotter.screenshot(
+            f"{debug_plot_path}_xyplane.png", transparent_background=True
         )
 
         plotter.close()

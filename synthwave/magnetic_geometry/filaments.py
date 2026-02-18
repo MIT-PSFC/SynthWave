@@ -252,6 +252,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
         scale_points: Optional[bool] = True,
         prevent_synthetic_structure: Optional[bool] = True,
         default_trace_type: TraceType = TraceType.SINGLE,
+        helicity_sign: Optional[int] = -1,
     ):
         """Initialize an equilibrium filament.
 
@@ -271,19 +272,26 @@ class EquilibriumFilamentTracer(FilamentTracer):
             Whether to adjust the number of points to the next prime number to avoid synthetic structures in simulations.
         default_trace_type : TraceType, optional
             Default tracing method to use
+        helicity_sign : int, optional
+            Sign of the helicity used when following the field lines. A value of
+            ``+1`` traces in the default direction, while ``-1`` reverses the direction.
 
         """
         super().__init__(
-            m, n, int(base_num_points), scale_points, prevent_synthetic_structure
+            np.abs(m),
+            n,
+            int(base_num_points),
+            scale_points,
+            prevent_synthetic_structure,
         )
         self.eq_field = eq_field
         self.default_trace_type = default_trace_type
+        self.helicity_sign = helicity_sign
 
     def trace(
         self,
         num_points: Optional[int] = None,
         trace_type: TraceType = TraceType.SINGLE,
-        helicity_sign: int = +1,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Trace a filament along the equilibrium magnetic field.
 
@@ -296,10 +304,6 @@ class EquilibriumFilamentTracer(FilamentTracer):
             Tracing strategy to use. This controls how the field is followed when
             computing the filament shape (e.g., cylindrical approximation, naive,
             single-point, or averaged tracing).
-        helicity_sign : int, optional
-            Sign of the helicity used when following the field lines. A value of
-            ``+1`` traces in the default direction, while ``-1`` reverses the
-            direction.
 
         Returns
         -------
@@ -314,8 +318,10 @@ class EquilibriumFilamentTracer(FilamentTracer):
         # Correction for m/n as integer multiples (otherwise leads to ``wandering'' filaments)
         ratio = Fraction(self.m, self.n)
         m_local = ratio.numerator
+        self.helicity_sign *= np.sign(m_local)
+        m_local = np.abs(m_local)
         n_local = ratio.denominator
-        psi_q = self.eq_field.get_psi_of_q(m_local / n_local)
+        psi_q = self.eq_field.get_psi_of_q(np.abs(m_local / n_local))
 
         filament_etas = np.linspace(0, 2 * np.pi, num_points)
         poloidal_points = np.zeros((num_points, 3))  # R, Z, a
@@ -338,7 +344,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
 
         # Currently: +m/+n helicity matches empirical C-Mod pickup
         def _Z_a(eta, a):
-            Z = self.eq_field.eqdsk.zmagx + (helicity_sign) * (a * np.sin(eta))
+            Z = self.eq_field.eqdsk.zmagx + (self.helicity_sign) * (a * np.sin(eta))
             return Z
 
         def psi_prime_a(eta, a):
@@ -346,7 +352,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
             R = _R_a(eta, a)
             Z = _Z_a(eta, a)
             return self.eq_field.psi.ev(R, Z, dx=1, dy=0) * np.cos(eta) + (
-                helicity_sign
+                self.helicity_sign
             ) * self.eq_field.psi.ev(R, Z, dx=0, dy=1) * np.sin(eta)
 
         for i, eta in enumerate(filament_etas):
@@ -439,6 +445,9 @@ class EquilibriumFilamentTracer(FilamentTracer):
                     phi_indices = np.squeeze(
                         np.where((phi <= known_phi_start) & (phi >= known_phi_end))
                     )
+
+                # Sanity check for array shape
+                phi_indices = np.atleast_1d(phi_indices)
 
                 actual_phi_start = phi[phi_indices[0]]
                 actual_phi_end = phi[phi_indices[-1]]
