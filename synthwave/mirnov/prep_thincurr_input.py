@@ -80,13 +80,24 @@ def gen_OFT_sensors_file(
 
     sensor_list = []
     for sensor in sensor_details.sensor.values:
+        # Get sensor position and normal vector
         pt = sensor_details.position.sel(sensor=sensor).values
+
         # normal vector does not currently account for toroidal tilt
         norm = sensor_details.normal.sel(sensor=sensor).values
+
         # sensor radius
         dx = sensor_details.radius.sel(sensor=sensor).item()
+
+        # verify that "sensor" is the sensor name, not the sensor index
+        sensor_name = (
+            sensor
+            if isinstance(sensor, str)
+            else sensor_details.sensor_name.sel(sensor=sensor).item()
+        )
+
         # create Mirnov object
-        sensor_list.append(Mirnov(pt, norm, sensor, dx))
+        sensor_list.append(Mirnov(pt, norm, sensor_name, dx))
 
     if sensor_file_path is None:
         sensor_file_path = os.path.join(

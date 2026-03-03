@@ -318,7 +318,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
         # Correction for m/n as integer multiples (otherwise leads to ``wandering'' filaments)
         ratio = Fraction(self.m, self.n)
         m_local = ratio.numerator
-        self.helicity_sign *= np.sign(m_local)
+        self.helicity_sign = np.sign(m_local)
         m_local = np.abs(m_local)
         n_local = ratio.denominator
         psi_q = self.eq_field.get_psi_of_q(np.abs(m_local / n_local))
