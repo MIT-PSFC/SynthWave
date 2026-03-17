@@ -27,11 +27,18 @@ def calc_direct_response(
 
     # Create thin wall model
     tw_model = ThinCurr(oft_env)
-    tw_model.setup_model(
-        mesh_file=mesh_file,
-        xml_filename=os.path.join(working_directory, "oft_in.xml"),
-    )
-    tw_model.setup_io(working_directory)
+    try:
+        tw_model.setup_model(
+            mesh_file=mesh_file,
+            xml_filename=os.path.join(working_directory, "oft_in.xml"),
+        )
+
+        tw_model.setup_io(working_directory)
+    except Exception as e:
+        print(f"Error setting up ThinCurr model: {e}")
+        print(f"Mesh file: {mesh_file}")
+        print(f"xml file: {os.path.join(working_directory, 'oft_in.xml')}")
+        raise e
 
     # Calculate mutual inductances
 
