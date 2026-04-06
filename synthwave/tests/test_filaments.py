@@ -929,140 +929,51 @@ class TestAllFilamentTracers:
             ),
         ],
     )
-    @pytest.mark.parametrize("mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}])
+    @pytest.mark.parametrize(
+        "mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": -3, "n": 2}]
+    )
     def test_closest_point_has_same_current(
         self, tracer_class: FilamentTracer, tracer_args, mode
     ):
-        """Test that the closest point on the filament to a given point has the same current value."""
+        """For every point, ensure its nearest neighbor has the same current and belongs to the same filament"""
         tracer_args = (mode["m"], mode["n"]) + tracer_args
         tracer = tracer_class(*tracer_args)
         filament_ds = tracer.get_filament_ds(
-            num_filaments=6, coordinate_system="cartesian"
+            num_filaments=7, coordinate_system="cartesian"
         )
 
         x_vals_all = filament_ds["x"].values
         y_vals_all = filament_ds["y"].values
         z_vals_all = filament_ds["z"].values
+        num_filaments = filament_ds.dims["filament"]
+        num_pts = filament_ds.dims["point"]
 
-        # For each filament, ensure the closest point to the start and the end has the same current
-        for i in range(filament_ds.dims["filament"]):
-            x_vals_filament = filament_ds["x"].values[i, :]
-            y_vals_filament = filament_ds["y"].values[i, :]
-            z_vals_filament = filament_ds["z"].values[i, :]
-            current = filament_ds["current"].values[i]
-
-            start_point = np.array(
-                [x_vals_filament[0], y_vals_filament[0], z_vals_filament[0]]
-            )
-            end_point = np.array(
-                [x_vals_filament[-1], y_vals_filament[-1], z_vals_filament[-1]]
-            )
-
-            # Compute distances to all points, except the start and end points on this filament
-            distances_start = np.sqrt(
-                (x_vals_all - start_point[0]) ** 2
-                + (y_vals_all - start_point[1]) ** 2
-                + (z_vals_all - start_point[2]) ** 2
-            )
-            distances_end = np.sqrt(
-                (x_vals_all - end_point[0]) ** 2
-                + (y_vals_all - end_point[1]) ** 2
-                + (z_vals_all - end_point[2]) ** 2
-            )
-            # Exclude start and end points of this filament
-            distances_start[i, 0] = np.inf
-            distances_start[i, -1] = np.inf
-            distances_end[i, -1] = np.inf
-            distances_end[i, 0] = np.inf
-
-            closest_start_point_idx = np.unravel_index(
-                np.argmin(distances_start), distances_start.shape
-            )
-            closest_end_point_idx = np.unravel_index(
-                np.argmin(distances_end), distances_end.shape
-            )
-
-            closest_start_current_idx = closest_start_point_idx[0]
-            closest_end_current_idx = closest_end_point_idx[0]
-
-            closest_start_current = filament_ds["current"].values[
-                closest_start_current_idx
-            ]
-            closest_end_current = filament_ds["current"].values[closest_end_current_idx]
-
-            assert np.isclose(closest_start_current, current, rtol=1e-10)
-            assert np.isclose(closest_end_current, current, rtol=1e-10)
-
-    @pytest.mark.parametrize(
-        "tracer_class, tracer_args",
-        [
-            (ToroidalFilamentTracer, (1.8, 0.0, 0.5, 400)),
-            (
-                EquilibriumFilamentTracer,
-                (EquilibriumField(TestEquilibriumFilamentTracer.eqdsk), 400),
-            ),
-        ],
-    )
-    @pytest.mark.parametrize("mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}])
-    def test_closest_point_has_same_current_filament(
-        self, tracer_class: FilamentTracer, tracer_args, mode
-    ):
-        """Test that the closest point on the filament to a given point has the same current value."""
-        tracer_args = (mode["m"], mode["n"]) + tracer_args
-        tracer = tracer_class(*tracer_args)
-        filament_ds = tracer.get_filament_ds(
-            num_filaments=10, coordinate_system="cartesian"
+        # Flatten all filament points to (N_filaments * N_pts, 3) and record which filament each belongs to
+        all_points = np.column_stack(
+            [x_vals_all.ravel(), y_vals_all.ravel(), z_vals_all.ravel()]
         )
+        flat_filament_idx = np.repeat(np.arange(num_filaments), num_pts)
 
-        x_vals_all = filament_ds["x"].values
-        y_vals_all = filament_ds["y"].values
-        z_vals_all = filament_ds["z"].values
+        # Compute the full squared-distance matrix via ||a-b||² = ||a||² + ||b||² - 2·a·b
+        norms_sq = np.sum(all_points**2, axis=1)
+        dist_sq = (
+            norms_sq[:, np.newaxis]
+            + norms_sq[np.newaxis, :]
+            - 2.0 * (all_points @ all_points.T)
+        )
+        np.fill_diagonal(dist_sq, np.inf)
 
-        # For each filament, ensure the closest point to the start and the end has the same current
-        for i in range(filament_ds.dims["filament"]):
-            x_vals_filament = filament_ds["x"].values[i, :]
-            y_vals_filament = filament_ds["y"].values[i, :]
-            z_vals_filament = filament_ds["z"].values[i, :]
-            current = filament_ds["current"].values[i]
+        nearest_flat_idx = np.argmin(dist_sq, axis=1)
+        nearest_filaments = flat_filament_idx[nearest_flat_idx]
 
-            start_point = np.array(
-                [x_vals_filament[0], y_vals_filament[0], z_vals_filament[0]]
+        assert np.all(nearest_filaments == flat_filament_idx), (
+            "Some points' nearest neighbor belongs to a different filament. "
+            f"Offending point flat indices: {np.where(nearest_filaments != flat_filament_idx)[0].tolist()}"
+        )
+        assert np.all(
+            np.isclose(
+                filament_ds["current"].values[nearest_filaments],
+                filament_ds["current"].values[flat_filament_idx],
+                rtol=1e-10,
             )
-            end_point = np.array(
-                [x_vals_filament[-1], y_vals_filament[-1], z_vals_filament[-1]]
-            )
-
-            # Compute distances to all points, except the start and end points on this filament
-            distances_start = np.sqrt(
-                (x_vals_all - start_point[0]) ** 2
-                + (y_vals_all - start_point[1]) ** 2
-                + (z_vals_all - start_point[2]) ** 2
-            )
-            distances_end = np.sqrt(
-                (x_vals_all - end_point[0]) ** 2
-                + (y_vals_all - end_point[1]) ** 2
-                + (z_vals_all - end_point[2]) ** 2
-            )
-            # Exclude start and end points of this filament
-            distances_start[i, 0] = np.inf
-            distances_start[i, -1] = np.inf
-            distances_end[i, -1] = np.inf
-            distances_end[i, 0] = np.inf
-
-            closest_start_point_idx = np.unravel_index(
-                np.argmin(distances_start), distances_start.shape
-            )
-            closest_end_point_idx = np.unravel_index(
-                np.argmin(distances_end), distances_end.shape
-            )
-
-            closest_start_current_idx = closest_start_point_idx[0]
-            closest_end_current_idx = closest_end_point_idx[0]
-
-            closest_start_current = filament_ds["current"].values[
-                closest_start_current_idx
-            ]
-            closest_end_current = filament_ds["current"].values[closest_end_current_idx]
-
-            assert np.isclose(closest_start_current, current, rtol=1e-10)
-            assert np.isclose(closest_end_current, current, rtol=1e-10)
+        )
