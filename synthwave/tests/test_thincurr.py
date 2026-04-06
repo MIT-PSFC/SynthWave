@@ -10,7 +10,7 @@ from OpenFUSIONToolkit import OFT_env
 from synthwave import PACKAGE_ROOT
 
 from synthwave.mirnov.prep_thincurr_input import gen_OFT_filament_and_eta_file
-from synthwave.scratch.mesh_plot import create_torus_mesh
+from scratch.mesh_plot import create_torus_mesh
 from synthwave.magnetic_geometry.filaments import ToroidalFilamentTracer
 from synthwave.mirnov.run_thincurr_model import calc_frequency_response
 from synthwave.mirnov.prep_thincurr_input import (

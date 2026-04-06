@@ -23,6 +23,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "jupyter",
     "black>=25.9.0",
     "isort>=7.0.0",
     "mypy>=1.18.2",
