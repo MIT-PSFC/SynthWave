@@ -9,8 +9,7 @@ from OpenFUSIONToolkit import OFT_env
 
 from synthwave import PACKAGE_ROOT
 
-from synthwave.mirnov.prep_thincurr_input import gen_OFT_filament_and_eta_file
-from scratch.mesh_plot import create_torus_mesh
+from synthwave.magnetic_geometry.utils import create_torus_mesh
 from synthwave.magnetic_geometry.filaments import ToroidalFilamentTracer
 from synthwave.mirnov.run_thincurr_model import calc_frequency_response
 from synthwave.mirnov.prep_thincurr_input import (
@@ -21,7 +20,7 @@ from synthwave.magnetic_geometry.utils import angle_domain, wrapped_diff
 
 
 # Fixture for oft environment so only one is created for all tests
-@pytest.fixture
+@pytest.fixture(scope="session")
 def oft_env_fixture():
     oft_env = OFT_env()
     return oft_env
