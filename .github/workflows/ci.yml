@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Cache OFT
+        uses: actions/cache@v4
+        with:
+          path: submodules/OpenFUSIONToolkit
+          key: oft-v1.0.0-beta6-ubuntu-22.04
+
+      - name: Install
+        run: ./install.sh
+
+      - name: Ruff format check
+        run: uv run ruff format --check synthwave/
+
+      - name: Ruff lint
+        run: uv run ruff check synthwave/
+
+      - name: Mypy
+        run: uv run mypy synthwave/
+
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Cache OFT
+        uses: actions/cache@v4
+        with:
+          path: submodules/OpenFUSIONToolkit
+          key: oft-v1.0.0-beta6-ubuntu-22.04
+
+      - name: Install
+        run: ./install.sh
+
+      - name: Run tests
+        run: uv run pytest synthwave/tests/
+
+  notebooks:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Cache OFT
+        uses: actions/cache@v4
+        with:
+          path: submodules/OpenFUSIONToolkit
+          key: oft-v1.0.0-beta6-ubuntu-22.04
+
+      - name: Install
+        run: ./install.sh
+
+      - name: Run notebooks
+        run: uv run pytest --nbmake examples/
