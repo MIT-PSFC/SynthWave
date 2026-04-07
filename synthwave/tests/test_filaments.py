@@ -272,13 +272,14 @@ class TestToroidalFilamentTracer:
             {"m": 5, "n": 4},
             {"m": 4, "n": 1},
             {"m": 5, "n": 1},
+            {"m": -3, "n": 2},
         ],
     )
     def test_points_and_currents(self, mode):
         """Test get_filament_ds method for correct output dataset."""
         major_radius = 1
         minor_radius = 0.3
-        num_filaments = 6
+        num_filaments = 19
 
         fig_dir = os.path.join(self.fig_dir, "test_points_and_currents")
         if not os.path.exists(fig_dir):
@@ -303,7 +304,6 @@ class TestToroidalFilamentTracer:
         ].values  # Shape: (num_filaments,), complex values
 
         # Determine the phi range for appropriate x-axis ticks
-        phi_min = phi_vals.min()
         phi_max = phi_vals.max()
 
         # Create x-axis ticks that span the entire phi domain
@@ -453,8 +453,22 @@ class TestToroidalFilamentTracer:
         fig.tight_layout()
         fig_path = os.path.join(fig_dir, f"m{mode['m']}_n{mode['n']}.png")
         fig.savefig(fig_path, dpi=150)
-        print(
-            f"Saved filament current plot for mode m={mode['m']}, n={mode['n']} to {fig_path}"
+        plt.close(fig)
+
+        # All current magnitudes must be 1 (unit phasors)
+        np.testing.assert_allclose(np.abs(currents), 1.0, rtol=1e-10)
+
+        # Adjacent filaments must have equal phase steps of 2*pi*sign(m)*n_local/num_filaments
+        # Wrap expected to (-pi, pi] to match np.angle output range
+        ratio = Fraction(mode["m"], mode["n"])
+        n_local = ratio.denominator
+        m_sign = int(np.sign(ratio.numerator)) if ratio.numerator != 0 else 1
+        expected_phase_step = np.angle(
+            np.exp(1j * 2 * np.pi * m_sign * n_local / num_filaments)
+        )
+        measured_phase_steps = np.angle(currents[1:] / currents[:-1])
+        np.testing.assert_allclose(
+            measured_phase_steps, expected_phase_step, atol=1e-10
         )
 
     @pytest.mark.parametrize(
@@ -470,7 +484,7 @@ class TestToroidalFilamentTracer:
     def test_points_and_currents_3d(self, mode):
         major_radius = 1
         minor_radius = 0.3
-        num_filaments = 6
+        num_filaments = 7
 
         fig_dir = os.path.join(self.fig_dir, "test_points_and_currents_3d")
         if not os.path.exists(fig_dir):
@@ -533,9 +547,14 @@ class TestToroidalFilamentTracer:
         fig_path = os.path.join(fig_dir, f"m{mode['m']}_n{mode['n']}_3d.png")
         fig.savefig(fig_path, dpi=150)
         plt.close(fig)
-        print(
-            f"Saved 3D filament trace plot for mode m={mode['m']}, n={mode['n']} to {fig_path}"
-        )
+
+        # All current magnitudes must be 1 (unit phasors)
+        np.testing.assert_allclose(np.abs(currents), 1.0, rtol=1e-10)
+
+        # Dataset shape must match num_filaments x num_points
+        assert filament_ds["x"].shape == (num_filaments, toroidal_tracer.num_points)
+        assert filament_ds["y"].shape == (num_filaments, toroidal_tracer.num_points)
+        assert filament_ds["z"].shape == (num_filaments, toroidal_tracer.num_points)
 
 
 class TestEquilibriumFilamentTracer:
@@ -615,13 +634,14 @@ class TestEquilibriumFilamentTracer:
             {"m": 5, "n": 4},
             {"m": 4, "n": 1},
             {"m": 5, "n": 1},
+            {"m": -3, "n": 2},
         ],
     )
     def test_points_and_currents(self, mode):
         """Test get_filament_ds method for correct output dataset."""
 
         eq_field = EquilibriumField(self.eqdsk)
-        num_filaments = 24
+        num_filaments = 23
 
         fig_dir = os.path.join(self.fig_dir, "test_points_and_currents")
         if not os.path.exists(fig_dir):
@@ -804,8 +824,22 @@ class TestEquilibriumFilamentTracer:
         fig.tight_layout()
         fig_path = os.path.join(fig_dir, f"m{mode['m']}_n{mode['n']}.png")
         fig.savefig(fig_path, dpi=150)
-        print(
-            f"Saved filament current plot for mode m={mode['m']}, n={mode['n']} to {fig_path}"
+        plt.close(fig)
+
+        # All current magnitudes must be 1 (unit phasors)
+        np.testing.assert_allclose(np.abs(currents), 1.0, rtol=1e-10)
+
+        # Adjacent filaments must have equal phase steps of 2*pi*sign(m)*n_local/num_filaments
+        # Wrap expected to (-pi, pi] to match np.angle output range
+        ratio = Fraction(mode["m"], mode["n"])
+        n_local = ratio.denominator
+        m_sign = int(np.sign(ratio.numerator)) if ratio.numerator != 0 else 1
+        expected_phase_step = np.angle(
+            np.exp(1j * 2 * np.pi * m_sign * n_local / num_filaments)
+        )
+        measured_phase_steps = np.angle(currents[1:] / currents[:-1])
+        np.testing.assert_allclose(
+            measured_phase_steps, expected_phase_step, atol=1e-10
         )
 
     @pytest.mark.parametrize(
@@ -815,7 +849,7 @@ class TestEquilibriumFilamentTracer:
         """Test get_filament_ds method and create 3D visualization of filament traces."""
 
         eq_field = EquilibriumField(self.eqdsk)
-        num_filaments = 6
+        num_filaments = 7  # Prime: coprime with any n_local
 
         fig_dir = os.path.join(self.fig_dir, "test_points_and_currents_3d")
         if not os.path.exists(fig_dir):
@@ -889,7 +923,7 @@ class TestEquilibriumFilamentTracer:
 
         # Plot some filaments
         filament_list, current_list = equilibrium_tracer.get_filament_list(
-            num_filaments=6
+            num_filaments=7
         )
         for ind, filament in enumerate(filament_list):
             filament_spline = pyvista.Spline(filament, len(filament))
@@ -912,6 +946,14 @@ class TestEquilibriumFilamentTracer:
         plotter.screenshot(
             os.path.join(fig_dir, f"m{mode['m']}_n{mode['n']}_3d_pyvista.png")
         )
+
+        # All current magnitudes must be 1 (unit phasors)
+        np.testing.assert_allclose(np.abs(currents), 1.0, rtol=1e-10)
+
+        # Dataset shape must match num_filaments x num_points
+        assert filament_ds["x"].shape == (num_filaments, equilibrium_tracer.num_points)
+        assert filament_ds["y"].shape == (num_filaments, equilibrium_tracer.num_points)
+        assert filament_ds["z"].shape == (num_filaments, equilibrium_tracer.num_points)
 
 
 class TestAllFilamentTracers:
@@ -945,8 +987,8 @@ class TestAllFilamentTracers:
         x_vals_all = filament_ds["x"].values
         y_vals_all = filament_ds["y"].values
         z_vals_all = filament_ds["z"].values
-        num_filaments = filament_ds.dims["filament"]
-        num_pts = filament_ds.dims["point"]
+        num_filaments = filament_ds.sizes["filament"]
+        num_pts = filament_ds.sizes["point"]
 
         # Flatten all filament points to (N_filaments * N_pts, 3) and record which filament each belongs to
         all_points = np.column_stack(
@@ -977,3 +1019,258 @@ class TestAllFilamentTracers:
                 rtol=1e-10,
             )
         )
+
+    @pytest.mark.parametrize(
+        "tracer_class, tracer_args",
+        [
+            (ToroidalFilamentTracer, (1.8, 0.0, 0.5, 400)),
+            (
+                EquilibriumFilamentTracer,
+                (EquilibriumField(TestEquilibriumFilamentTracer.eqdsk), 400),
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}])
+    def test_helicity_maintains_shape(
+        self, tracer_class: FilamentTracer, tracer_args, mode
+    ):
+        """For each filament tracer, ensure the maximum extents in R and Z space is maintained
+        for positive and negative helicity.
+
+        Must ensure the tracer isn't accidentally being shifted up / down in Z when the sign is flipped.
+        """
+        tracer_args_pos = (mode["m"], mode["n"]) + tracer_args
+        tracer_pos = tracer_class(*tracer_args_pos)
+        filament_pos_ds = tracer_pos.get_filament_ds(
+            num_filaments=7, coordinate_system="cylindrical"
+        )
+
+        tracer_args_neg = (-mode["m"], mode["n"]) + tracer_args
+        tracer_neg = tracer_class(*tracer_args_neg)
+        filament_neg_ds = tracer_neg.get_filament_ds(
+            num_filaments=7, coordinate_system="cylindrical"
+        )
+
+        R_pos = filament_pos_ds["R"].values
+        Z_pos = filament_pos_ds["Z"].values
+        R_neg = filament_neg_ds["R"].values
+        Z_neg = filament_neg_ds["Z"].values
+
+        # Check that the maximum and minimum R and Z values are approximately equal between positive and negative m
+
+        assert np.isclose(R_pos.max(), R_neg.max(), rtol=0.05), (
+            f"Maximum R values differ between positive and negative m: {R_pos.max()} vs {R_neg.max()}"
+        )
+        assert np.isclose(R_pos.min(), R_neg.min(), rtol=0.05), (
+            f"Minimum R values differ between positive and negative m: {R_pos.min()} vs {R_neg.min()}"
+        )
+        assert np.isclose(Z_pos.max(), Z_neg.max(), rtol=0.05), (
+            f"Maximum Z values differ between positive and negative m: {Z_pos.max()} vs {Z_neg.max()}"
+        )
+        assert np.isclose(Z_pos.min(), Z_neg.min(), rtol=0.05), (
+            f"Minimum Z values differ between positive and negative m: {Z_pos.min()} vs {Z_neg.min()}"
+        )
+
+
+class TestNegativeMFilament:
+    """Tests specifically for negative m handling."""
+
+    eqdsk_file = os.path.join(PACKAGE_ROOT, "input_data", "cmod", "g1051202011.1000")
+    with open(eqdsk_file, "r") as f:
+        eqdsk = freeqdsk.geqdsk.read(f)
+
+    @pytest.mark.parametrize(
+        "base_num_points, scale_points, prevent_synthetic_structure",
+        [
+            (100, True, False),
+            (100, True, True),
+            (100, False, False),
+        ],
+    )
+    def test_toroidal_negative_m_scale_points(
+        self, base_num_points, scale_points, prevent_synthetic_structure
+    ):
+        """ToroidalFilamentTracer with negative m and scale_points must not produce degenerate num_points."""
+        m, n = -3, 2
+        R0, Z0, a = 1.8, 0.0, 0.5
+        tracer = ToroidalFilamentTracer(
+            m,
+            n,
+            R0,
+            Z0,
+            a,
+            base_num_points=base_num_points,
+            scale_points=scale_points,
+            prevent_synthetic_structure=prevent_synthetic_structure,
+        )
+        # num_points must be at least as large as it would be for positive m
+        assert tracer.num_points >= 2, "num_points must be > 2"
+        expected = base_num_points
+        if scale_points:
+            expected = int(base_num_points * abs(m) / n)
+        if prevent_synthetic_structure:
+            expected = nextprime(expected)
+        assert tracer.num_points == expected
+
+        points, etas = tracer.trace()
+        assert points.shape[0] == tracer.num_points
+        # phi goes backwards for negative m
+        assert points[-1, 1] < 0.0
+
+    def test_negative_m_current_phasor_is_conjugate_of_positive_m(self):
+        """m=-3,n=2 must produce complex conjugate currents compared to m=3,n=2."""
+        R0, Z0, a = 1.8, 0.0, 0.5
+        num_filaments = 7
+
+        pos_tracer = ToroidalFilamentTracer(3, 2, R0, Z0, a, base_num_points=100)
+        neg_tracer = ToroidalFilamentTracer(-3, 2, R0, Z0, a, base_num_points=100)
+
+        pos_ds = pos_tracer.get_filament_ds(num_filaments=num_filaments)
+        neg_ds = neg_tracer.get_filament_ds(num_filaments=num_filaments)
+
+        np.testing.assert_allclose(
+            neg_ds["current"].values,
+            np.conj(pos_ds["current"].values),
+            atol=1e-10,
+        )
+
+    def test_helicity_sign_mirrors_z_coordinates(self):
+        """EquilibriumFilamentTracer with helicity_sign=+1 vs -1 must produce Z-mirrored traces."""
+        eq_field = EquilibriumField(self.eqdsk)
+        m, n = 3, 2
+
+        tracer_pos = EquilibriumFilamentTracer(
+            m,
+            n,
+            eq_field,
+            base_num_points=101,
+            scale_points=False,
+            prevent_synthetic_structure=False,
+            helicity_sign=1,
+        )
+        tracer_neg = EquilibriumFilamentTracer(
+            m,
+            n,
+            eq_field,
+            base_num_points=101,
+            scale_points=False,
+            prevent_synthetic_structure=False,
+            helicity_sign=-1,
+        )
+
+        pts_pos, _ = tracer_pos.trace()
+        pts_neg, _ = tracer_neg.trace()
+
+        # Z displacement about the magnetic axis should be negated between the two tracers.
+        # Tolerance is loose because the equilibrium is not perfectly up-down symmetric,
+        # so a_pos(eta) != a_neg(eta) and the mirror is approximate.
+        # Similarly, R is not necessarily equal for a non-up-down-symmetric equilibrium.
+        zmagx = eq_field.eqdsk.zmagx
+        np.testing.assert_allclose(
+            pts_pos[:, 2] - zmagx,
+            -(pts_neg[:, 2] - zmagx),
+            rtol=0.05,
+            err_msg="helicity_sign=+1 and -1 must produce Z-mirrored traces about the magnetic axis",
+        )
+        np.testing.assert_allclose(
+            pts_pos[:, 0],
+            pts_neg[:, 0],
+            rtol=0.05,
+            err_msg="helicity_sign should not affect R coordinates significantly",
+        )
+
+
+class TestFilamentValueErrors:
+    """Tests for ValueError conditions in get_filament_ds / get_filament_list."""
+
+    def test_get_filament_ds_zero_filaments_raises(self):
+        tracer = ToroidalFilamentTracer(
+            2,
+            1,
+            1.8,
+            0.0,
+            0.5,
+            base_num_points=50,
+            scale_points=False,
+            prevent_synthetic_structure=False,
+        )
+        with pytest.raises(
+            ValueError, match="num_filaments must be a positive integer"
+        ):
+            tracer.get_filament_ds(num_filaments=0)
+
+    def test_get_filament_ds_negative_filaments_raises(self):
+        tracer = ToroidalFilamentTracer(
+            2,
+            1,
+            1.8,
+            0.0,
+            0.5,
+            base_num_points=50,
+            scale_points=False,
+            prevent_synthetic_structure=False,
+        )
+        with pytest.raises(
+            ValueError, match="num_filaments must be a positive integer"
+        ):
+            tracer.get_filament_ds(num_filaments=-1)
+
+    def test_get_filament_ds_invalid_coordinate_system_raises(self):
+        tracer = ToroidalFilamentTracer(
+            2,
+            1,
+            1.8,
+            0.0,
+            0.5,
+            base_num_points=50,
+            scale_points=False,
+            prevent_synthetic_structure=False,
+        )
+        with pytest.raises(ValueError, match="coordinate_system"):
+            tracer.get_filament_ds(num_filaments=7, coordinate_system="spherical")
+
+    def test_get_filament_ds_non_coprime_num_filaments_raises(self):
+        """num_filaments not coprime with n_local must raise ValueError."""
+        # m=3, n=2: n_local=2. num_filaments=4: gcd(4,2)=2 != 1
+        tracer = ToroidalFilamentTracer(
+            3,
+            2,
+            1.8,
+            0.0,
+            0.5,
+            base_num_points=50,
+            scale_points=False,
+            prevent_synthetic_structure=False,
+        )
+        with pytest.raises(ValueError, match="coprime"):
+            tracer.get_filament_ds(num_filaments=4)
+
+    def test_get_filament_list_zero_filaments_raises(self):
+        tracer = ToroidalFilamentTracer(
+            2,
+            1,
+            1.8,
+            0.0,
+            0.5,
+            base_num_points=50,
+            scale_points=False,
+            prevent_synthetic_structure=False,
+        )
+        with pytest.raises(
+            ValueError, match="num_filaments must be a positive integer"
+        ):
+            tracer.get_filament_list(num_filaments=0)
+
+    def test_get_filament_list_invalid_coordinate_system_raises(self):
+        tracer = ToroidalFilamentTracer(
+            2,
+            1,
+            1.8,
+            0.0,
+            0.5,
+            base_num_points=50,
+            scale_points=False,
+            prevent_synthetic_structure=False,
+        )
+        with pytest.raises(ValueError, match="coordinate_system"):
+            tracer.get_filament_list(num_filaments=7, coordinate_system="toroidal")

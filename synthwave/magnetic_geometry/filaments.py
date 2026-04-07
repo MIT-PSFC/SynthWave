@@ -3,6 +3,7 @@ from typing import Optional
 from enum import Enum
 from abc import ABC, abstractmethod
 import numpy as np
+from math import gcd
 from scipy.interpolate import make_interp_spline
 from scipy.optimize import newton
 from sympy import nextprime
@@ -30,7 +31,7 @@ class FilamentTracer(ABC):
 
         num_points = base_num_points
         if scale_points:
-            num_points = int(base_num_points * self.m / self.n)
+            num_points = int(base_num_points * abs(self.m) / self.n)
         if prevent_synthetic_structure:
             num_points = nextprime(num_points)
 
@@ -58,6 +59,15 @@ class FilamentTracer(ABC):
         if num_filaments <= 0:
             raise ValueError("num_filaments must be a positive integer")
 
+        ratio = Fraction(self.m, self.n)
+        n_local = ratio.denominator
+        if gcd(num_filaments, n_local) != 1:
+            raise ValueError(
+                f"num_filaments={num_filaments} and n_local={n_local} are not coprime "
+                f"(gcd={gcd(num_filaments, n_local)}), which would produce overlapping filaments. "
+                f"Choose a num_filaments that is coprime with {n_local}."
+            )
+
         if coordinate_system not in ["cylindrical", "cartesian", "toroidal"]:
             raise ValueError(
                 "coordinate_system must be either 'cylindrical', 'cartesian', or 'toroidal'"
@@ -76,10 +86,10 @@ class FilamentTracer(ABC):
             :, np.newaxis
         ]  # Apply toroidal offsets
 
-        # Complex currents for rotating wave: I(phi) = I_0 * exp(i*n*phi)
-        ratio = Fraction(self.m, self.n)
-        n_local = ratio.denominator
-        filament_currents = np.exp(1j * starting_angles * n_local)
+        # Complex currents for rotating wave: I(phi) = I_0 * exp(i*sign(m)*n*phi)
+        # The sign of m determines the direction of the rotating wave
+        m_sign = int(np.sign(ratio.numerator)) if ratio.numerator != 0 else 1
+        filament_currents = np.exp(1j * starting_angles * m_sign * n_local)
 
         if coordinate_system == "cylindrical":
             ds = xr.Dataset(
@@ -252,7 +262,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
         scale_points: Optional[bool] = True,
         prevent_synthetic_structure: Optional[bool] = True,
         default_trace_type: TraceType = TraceType.SINGLE,
-        helicity_sign: Optional[int] = -1,
+        helicity_sign: Optional[int] = None,
     ):
         """Initialize an equilibrium filament.
 
@@ -275,10 +285,11 @@ class EquilibriumFilamentTracer(FilamentTracer):
         helicity_sign : int, optional
             Sign of the helicity used when following the field lines. A value of
             ``+1`` traces in the default direction, while ``-1`` reverses the direction.
+            If ``None`` (default), the sign is inferred from the sign of ``m``.
 
         """
         super().__init__(
-            np.abs(m),
+            m,
             n,
             int(base_num_points),
             scale_points,
@@ -286,7 +297,9 @@ class EquilibriumFilamentTracer(FilamentTracer):
         )
         self.eq_field = eq_field
         self.default_trace_type = default_trace_type
-        self.helicity_sign = helicity_sign
+        self.helicity_sign = (
+            helicity_sign if helicity_sign is not None else (1 if m >= 0 else -1)
+        )
 
     def trace(
         self,
@@ -319,9 +332,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
 
         # Correction for m/n as integer multiples (otherwise leads to ``wandering'' filaments)
         ratio = Fraction(self.m, self.n)
-        m_local = ratio.numerator
-        self.helicity_sign = np.sign(m_local)
-        m_local = np.abs(m_local)
+        m_local = np.abs(ratio.numerator)
         n_local = ratio.denominator
         psi_q = self.eq_field.get_psi_of_q(np.abs(m_local / n_local))
 
