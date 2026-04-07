@@ -5,8 +5,6 @@ import freeqdsk
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-import pyvista
-import vtk
 from sympy import nextprime
 
 from synthwave import PACKAGE_ROOT
@@ -16,11 +14,6 @@ from synthwave.magnetic_geometry.filaments import (
     FilamentTracer,
     ToroidalFilamentTracer,
 )
-
-vtk.vtkObject.GlobalWarningDisplayOff()
-pyvista.OFF_SCREEN = True
-# Configure for headless operation - suppress VTK warnings
-pyvista.set_error_output_file("/dev/null")
 
 FIG_DIR = os.path.join(PACKAGE_ROOT, "tests", "figures")
 
@@ -912,35 +905,6 @@ class TestEquilibriumFilamentTracer:
         plt.close(fig)
         print(
             f"Saved 3D equilibrium filament trace plot for mode m={mode['m']}, n={mode['n']} to {fig_path}"
-        )
-
-        # Another way of plotting filaments
-        plotter = pyvista.Plotter()
-
-        # Plot some filaments
-        filament_list, current_list = equilibrium_tracer.get_filament_list(
-            num_filaments=7
-        )
-        for ind, filament in enumerate(filament_list):
-            filament_spline = pyvista.Spline(filament, len(filament))
-
-            plotter.add_mesh(
-                filament_spline,
-                color=plt.get_cmap("plasma")(
-                    (
-                        current_list[ind].real / np.max([c.real for c in current_list])
-                        + 1
-                    )
-                    / 2
-                ),
-                line_width=6,
-                render_points_as_spheres=True,
-                label="Filament" if ind == 0 else None,
-                opacity=1,
-            )
-
-        plotter.screenshot(
-            os.path.join(fig_dir, f"m{mode['m']}_n{mode['n']}_3d_pyvista.png")
         )
 
         # All current magnitudes must be 1 (unit phasors)
