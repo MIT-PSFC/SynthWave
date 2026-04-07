@@ -1,18 +1,16 @@
+import matplotlib.pyplot as plt
+
 from fractions import Fraction
 import pytest
 import numpy as np
 from sympy import nextprime
 import os
-import tempfile
 
 import pyvista
 
-pyvista.OFF_SCREEN = True
-# Configure for headless operation - suppress VTK warnings
-pyvista.set_error_output_file("/dev/null")
+
 import vtk
 
-vtk.vtkObject.GlobalWarningDisplayOff()
 
 from synthwave import PACKAGE_ROOT
 import freeqdsk
@@ -23,8 +21,11 @@ from synthwave.magnetic_geometry.filaments import (
     EquilibriumFilamentTracer,
 )
 from synthwave.magnetic_geometry.equilibrium_field import EquilibriumField
-import matplotlib.pyplot as plt
 
+vtk.vtkObject.GlobalWarningDisplayOff()
+pyvista.OFF_SCREEN = True
+# Configure for headless operation - suppress VTK warnings
+pyvista.set_error_output_file("/dev/null")
 
 FIG_DIR = os.path.join(PACKAGE_ROOT, "tests", "figures")
 
@@ -243,12 +244,12 @@ class TestToroidalFilamentTracer:
         assert points_custom.shape[0] == 200
 
         # Both should have same geometry, just different resolution
-        R_default, phi_default, Z_default = (
+        R_default, _phi_default, Z_default = (
             points_default[:, 0],
             points_default[:, 1],
             points_default[:, 2],
         )
-        R_custom, phi_custom, Z_custom = (
+        R_custom, _phi_custom, Z_custom = (
             points_custom[:, 0],
             points_custom[:, 1],
             points_custom[:, 2],

@@ -4,7 +4,6 @@ import os
 
 from synthwave import PACKAGE_ROOT
 
-import os
 import numpy as np
 import pytest
 import unittest.mock as mock

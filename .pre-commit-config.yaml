@@ -20,4 +20,3 @@ repos:
         language: system
         types: [python]
         files: "^synthwave/"
-        exclude: "^synthwave/tests/"

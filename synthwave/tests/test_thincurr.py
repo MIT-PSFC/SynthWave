@@ -1,14 +1,12 @@
 import os
 import numpy as np
 import tempfile
-from freeqdsk import geqdsk
 import xarray as xr
 import pytest
 from sympy import nextprime
 from OpenFUSIONToolkit import OFT_env
 import xml.etree.ElementTree as ET
 
-from synthwave import PACKAGE_ROOT
 
 from synthwave.magnetic_geometry.utils import create_torus_mesh
 from synthwave.magnetic_geometry.filaments import ToroidalFilamentTracer
@@ -144,10 +142,6 @@ def test_toroidal_angles(mode, major_radius, oft_env_fixture):
             working_directory=working_directory,
             sensor_file_path=sensor_file_path,
         )
-    # These are just for debugging purposes
-    total_response_phase = np.angle(total_response)
-    direct_response_phase = np.angle(direct_response)
-    vessel_response_phase = np.angle(vessel_response)
 
     # Phase difference for the direct response should closely match cylindrical approximation
     toroidal_phase_ab, toroidal_phase_cd = np.pi / 2, np.pi / 2
