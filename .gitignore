@@ -225,5 +225,4 @@ examples/mesh_plot/
 # scratch
 thincurr_scratch/
 scratch/
-synthwave/input_data
 synthwave/vessel_caches
