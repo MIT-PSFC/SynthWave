@@ -291,7 +291,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
     def trace(
         self,
         num_points: Optional[int] = None,
-        trace_type: TraceType = TraceType.SINGLE,
+        trace_type: TraceType = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Trace a filament along the equilibrium magnetic field.
 
@@ -314,6 +314,8 @@ class EquilibriumFilamentTracer(FilamentTracer):
 
         if num_points is None:
             num_points = self.num_points
+        if trace_type is None:
+            trace_type = self.default_trace_type
 
         # Correction for m/n as integer multiples (otherwise leads to ``wandering'' filaments)
         ratio = Fraction(self.m, self.n)

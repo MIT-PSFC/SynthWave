@@ -87,7 +87,7 @@ def thincurr_synthetic_mirnov_signal(
     sensor_freq_response: dict = {},
     doPlot: bool = False,
     doSave: bool = False,
-    plotParams: dict = {"clim_J": [0, 0.5]},
+    plotParams: dict = None,
 ) -> xr.Dataset:
     """
     Calculate the real and imaginary components of the magnetic sensor signals using ThinCurr.
@@ -111,6 +111,9 @@ def thincurr_synthetic_mirnov_signal(
     Returns:
         xr.Dataset: Dataset containing the simulated sensor signals in [T/s].
     """
+
+    if plotParams is None:
+        plotParams = {"clim_J": [0, 0.5]}
 
     ######################################################################################
     # Prepare filament currents, locations
