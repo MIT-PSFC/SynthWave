@@ -39,6 +39,16 @@ dev = [
 [tool.uv.sources]
 openfusiontoolkit = {path = "submodules/OpenFUSIONToolkit/python", editable = true}
 
+[tool.pytest.ini_options]
+# Prevent accidental parallel execution.  Tests in test_thincurr.py use the
+# OpenFUSIONToolkit C++ library which has global state and cannot run
+# concurrently.  -p no:xdist is a no-op when pytest-xdist is not installed,
+# but makes intent explicit and guards against it being added later.
+addopts = "-p no:xdist"
+markers = [
+    "serial: run sequentially with GC cleanup between tests (required for OFT tests)",
+]
+
 [tool.isort]
 profile = "black"
 

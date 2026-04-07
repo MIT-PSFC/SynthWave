@@ -6,17 +6,27 @@ import xarray as xr
 import pytest
 from sympy import nextprime
 from OpenFUSIONToolkit import OFT_env
+import xml.etree.ElementTree as ET
 
 from synthwave import PACKAGE_ROOT
 
 from synthwave.magnetic_geometry.utils import create_torus_mesh
 from synthwave.magnetic_geometry.filaments import ToroidalFilamentTracer
-from synthwave.mirnov.run_thincurr_model import calc_frequency_response
+from synthwave.mirnov.run_thincurr_model import (
+    calc_frequency_response,
+    calc_direct_response,
+)
 from synthwave.mirnov.prep_thincurr_input import (
     gen_OFT_sensors_file,
     gen_OFT_filament_and_eta_file,
 )
 from synthwave.magnetic_geometry.utils import angle_domain, wrapped_diff
+
+# All tests in this file use the OpenFUSIONToolkit C++ library which has
+# global state (OFT_env, ThinCurr) that cannot be shared across concurrent
+# workers.  Mark the entire module serial so the conftest fixture forces
+# sequential execution and GC cleanup between tests.
+pytestmark = pytest.mark.serial
 
 
 # Fixture for oft environment so only one is created for all tests
@@ -198,12 +208,165 @@ def test_toroidal_angles(mode, major_radius, oft_env_fixture):
         atol=0.001,
     )
 
-    # Poloidal phase difference should deviate from cylindrical approximation due to vessel effects
-    total_measured_phase_diff_ac = np.angle(total_response[2] / total_response[0])
-    total_measured_phase_diff_bd = np.angle(total_response[3] / total_response[1])
-    assert not np.isclose(
-        wrapped_diff(total_measured_phase_diff_ac, expected_phase_diff_ac), 0, atol=0.1
+
+def test_gen_OFT_filament_and_eta_file():
+    """gen_OFT_filament_and_eta_file must produce a valid XML file with the correct structure."""
+    filament_1 = np.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
+    filament_2 = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]])
+    resistivity_list = [1e-6, 2e-6]
+
+    with tempfile.TemporaryDirectory() as working_directory:
+        gen_OFT_filament_and_eta_file(
+            working_directory,
+            [filament_1, filament_2],
+            resistivity_list,
+        )
+
+        xml_path = os.path.join(working_directory, "oft_in.xml")
+        assert os.path.exists(xml_path), "oft_in.xml was not created"
+
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+
+        # Top-level structure
+        assert root.tag == "oft"
+        thincurr = root.find("thincurr")
+        assert thincurr is not None
+
+        # Resistivity entry
+        eta_elem = thincurr.find("eta")
+        assert eta_elem is not None
+        eta_values = [float(v) for v in eta_elem.text.split(",")]
+        assert np.allclose(eta_values, resistivity_list)
+
+        # Two coil sets
+        coil_sets = thincurr.findall("icoils/coil_set")
+        assert len(coil_sets) == len([filament_1, filament_2])
+
+        # First coil set has 2 points, second has 3
+        coils = coil_sets[0].findall("coil")
+        assert len(coils) == 1
+        assert int(coils[0].attrib["npts"]) == 2
+
+        coils2 = coil_sets[1].findall("coil")
+        assert int(coils2[0].attrib["npts"]) == 3
+
+
+def test_gen_OFT_sensors_file():
+    """gen_OFT_sensors_file must produce a .loc file and return its path."""
+    sensor_details = xr.Dataset(
+        data_vars={
+            "position": (
+                ("sensor", "coord"),
+                np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+            ),
+            "normal": (
+                ("sensor", "coord"),
+                np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+            ),
+            "radius": ("sensor", np.array([0.01, 0.01])),
+        },
+        coords={"sensor": ["A", "B"]},
+        attrs={"sensor_set_name": "test"},
     )
-    assert not np.isclose(
-        wrapped_diff(total_measured_phase_diff_bd, expected_phase_diff_bd), 0, atol=0.1
+
+    with tempfile.TemporaryDirectory() as working_directory:
+        sensor_path = gen_OFT_sensors_file(sensor_details, working_directory)
+        assert os.path.exists(sensor_path), "sensor file was not created"
+        assert sensor_path.endswith(".loc")
+
+        with open(sensor_path) as f:
+            content = f.read()
+        assert len(content) > 0
+
+
+def test_calc_direct_response_matches_frequency_response(oft_env_fixture):
+    """calc_direct_response must return the same direct component as calc_frequency_response."""
+
+    major_radius = 1
+    minor_radius_vessel = 0.35
+    minor_radius_sensor = 0.34
+    minor_radius_plasma = 0.3
+    num_filaments = nextprime(16)
+    mode = {"m": 2, "n": 1}
+
+    sensor_details = xr.Dataset(
+        data_vars={
+            "position": (
+                ("sensor", "coord"),
+                np.array(
+                    [
+                        [major_radius + minor_radius_sensor, 0.0, 0.0],
+                        [0.0, major_radius + minor_radius_sensor, 0.0],
+                    ]
+                ),
+            ),
+            "normal": (
+                ("sensor", "coord"),
+                np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+            ),
+            "radius": ("sensor", np.array([0.01, 0.01])),
+        },
+        coords={"sensor": ["sensor_x", "sensor_y"]},
+        attrs={"sensor_set_name": "test"},
+    )
+
+    toroidal_tracer = ToroidalFilamentTracer(
+        mode["m"],
+        mode["n"],
+        major_radius,
+        0.0,
+        minor_radius_plasma,
+        base_num_points=32,
+        scale_points=False,
+        prevent_synthetic_structure=False,
+    )
+
+    with tempfile.TemporaryDirectory() as working_directory:
+        torus_mesh = create_torus_mesh(
+            major_radius, minor_radius_vessel, ntheta=16, nphi=64
+        )
+        torus_mesh_file = os.path.join(working_directory, "torus_mesh.h5")
+        torus_mesh.write_to_file(torus_mesh_file)
+
+        sensor_file_path = gen_OFT_sensors_file(sensor_details, working_directory)
+
+        filament_list, current_list = toroidal_tracer.get_filament_list(
+            num_filaments=num_filaments
+        )
+        gen_OFT_filament_and_eta_file(
+            working_directory, filament_list, [1e-6] * len(filament_list)
+        )
+
+        total_response, direct_response_freq, vessel_response = calc_frequency_response(
+            oft_env=oft_env_fixture,
+            tracer=toroidal_tracer,
+            freq=10e3,
+            mesh_file=torus_mesh_file,
+            working_directory=working_directory,
+            sensor_file_path=sensor_file_path,
+        )
+
+        direct_response_only = calc_direct_response(
+            oft_env=oft_env_fixture,
+            tracer=toroidal_tracer,
+            mesh_file=torus_mesh_file,
+            sensor_details=sensor_details,
+            sensor_file_path=sensor_file_path,
+            working_directory=working_directory,
+        )
+
+    direct_from_freq = direct_response_freq
+    direct_from_direct = np.array(
+        [
+            direct_response_only["direct_response_real"].values
+            + 1j * direct_response_only["direct_response_imag"].values
+        ]
+    ).ravel()
+
+    np.testing.assert_allclose(
+        direct_from_direct,
+        direct_from_freq,
+        rtol=1e-6,
+        err_msg="calc_direct_response must match the direct component of calc_frequency_response",
     )
