@@ -23,12 +23,17 @@ def phi_domain(phi: np.ndarray) -> np.ndarray:
 
 
 def angle_domain(phase: np.ndarray) -> np.ndarray:
-    """Ensure phase is in the range [-pi, pi), to match np.angle output"""
+    """Ensure phase is within (-pi, pi],
+    to match np.angle output when determining the phase of a complex number"""
     return np.angle(np.exp(1j * phase))
 
 
 def wrapped_diff(phase1: np.ndarray, phase2: np.ndarray) -> np.ndarray:
-    """Compute the wrapped difference between two phases."""
+    """Compute the wrapped difference between two phases.
+    For example, if phase1 is 3pi / 4 and phase2 is -3pi / 4,
+    going from phase1 to phase2 is a change of 3 pi / 2,
+    which is equivalent to -pi / 2 when wrapped to the range (-pi, pi].
+    """
     diff = phase1 - phase2
     return angle_domain(diff)
 
