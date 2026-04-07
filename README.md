@@ -37,3 +37,7 @@ Given the provided input files, the magnitude of the output signal across the se
 
 ![Basic sensor signal response output](https://github.com/MIT-PSFC/SynthWave/blob/main/synthwave/mirnov/input_data/Sensor_Signals_m04_n02_f1.0e%2B01kHz_CMod.svg)
 
+## Generative AI Disclosure
+
+Github Copilot and Claude Code were used for code completion, snippet generation, and code review.
+However, the results of this were carefully vetted. A human has read and understands every line in this repo.
