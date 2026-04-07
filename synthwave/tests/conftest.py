@@ -7,6 +7,7 @@ C++ objects (ThinCurr, OFT_env) are finalized before the next test runs.
 """
 
 import gc
+
 import pytest
 
 

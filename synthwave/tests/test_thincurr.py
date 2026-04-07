@@ -1,24 +1,27 @@
 import os
-import numpy as np
 import tempfile
-import xarray as xr
-import pytest
-from sympy import nextprime
-from OpenFUSIONToolkit import OFT_env
 import xml.etree.ElementTree as ET
 
+import numpy as np
+import pytest
+import xarray as xr
+from OpenFUSIONToolkit import OFT_env
+from sympy import nextprime
 
-from synthwave.magnetic_geometry.utils import create_torus_mesh
 from synthwave.magnetic_geometry.filaments import ToroidalFilamentTracer
-from synthwave.mirnov.run_thincurr_model import (
-    calc_frequency_response,
-    calc_direct_response,
+from synthwave.magnetic_geometry.utils import (
+    angle_domain,
+    create_torus_mesh,
+    wrapped_diff,
 )
 from synthwave.mirnov.prep_thincurr_input import (
-    gen_OFT_sensors_file,
     gen_OFT_filament_and_eta_file,
+    gen_OFT_sensors_file,
 )
-from synthwave.magnetic_geometry.utils import angle_domain, wrapped_diff
+from synthwave.mirnov.run_thincurr_model import (
+    calc_direct_response,
+    calc_frequency_response,
+)
 
 # All tests in this file use the OpenFUSIONToolkit C++ library which has
 # global state (OFT_env, ThinCurr) that cannot be shared across concurrent

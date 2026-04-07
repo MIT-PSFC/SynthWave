@@ -1,11 +1,10 @@
-import pytest
 import numpy as np
-
+import pytest
 
 from synthwave.magnetic_geometry.utils import (
-    cylindrical_to_cartesian,
-    cartesian_to_cylindrical,
     angle_domain,
+    cartesian_to_cylindrical,
+    cylindrical_to_cartesian,
     wrapped_diff,
 )
 

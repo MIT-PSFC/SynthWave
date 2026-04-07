@@ -1,15 +1,14 @@
 """Tests for EquilibriumField methods."""
 
 import os
-
-from synthwave import PACKAGE_ROOT
-
-import numpy as np
-import pytest
 import unittest.mock as mock
 
-from synthwave.magnetic_geometry.equilibrium_field import EquilibriumField
 import freeqdsk
+import numpy as np
+import pytest
+
+from synthwave import PACKAGE_ROOT
+from synthwave.magnetic_geometry.equilibrium_field import EquilibriumField
 
 
 @pytest.fixture(scope="module")

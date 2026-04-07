@@ -1,18 +1,19 @@
-import xarray as xr
-from typing import Optional
-from enum import Enum
 from abc import ABC, abstractmethod
-import numpy as np
+from enum import Enum
+from fractions import Fraction
 from math import gcd
+from typing import Optional
+
+import numpy as np
+import xarray as xr
 from scipy.interpolate import make_interp_spline
 from scipy.optimize import newton
 from sympy import nextprime
-from fractions import Fraction
-from synthwave.magnetic_geometry.utils import cylindrical_to_cartesian
 
 from synthwave.magnetic_geometry.equilibrium_field import (
     EquilibriumField,
 )
+from synthwave.magnetic_geometry.utils import cylindrical_to_cartesian
 
 
 class FilamentTracer(ABC):

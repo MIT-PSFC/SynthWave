@@ -1,6 +1,6 @@
 import numpy as np
-from sympy import nextprime
 from OpenFUSIONToolkit.ThinCurr.meshing import ThinCurr_periodic_toroid
+from sympy import nextprime
 
 
 def cylindrical_to_cartesian(R: float, phi: float, Z: float) -> np.ndarray:

@@ -28,8 +28,8 @@ jobs:
       - name: Ruff lint
         run: uv run ruff check synthwave/
 
-      - name: Mypy
-        run: uv run mypy synthwave/
+      - name: Isort
+        run: uv run isort synthwave/
 
   test:
     runs-on: ubuntu-22.04

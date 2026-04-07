@@ -1,14 +1,16 @@
+import os
+from typing import Optional
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pyvista
+import vtk
+import xarray as xr
 from OpenFUSIONToolkit import OFT_env
 from OpenFUSIONToolkit.ThinCurr import ThinCurr
-import numpy as np
-import xarray as xr
-import pyvista
-import os
-import matplotlib.pyplot as plt
-from synthwave.magnetic_geometry.filaments import FilamentTracer
-from typing import Optional
-import vtk
+
 from synthwave import VESSEL_CACHE_DIR
+from synthwave.magnetic_geometry.filaments import FilamentTracer
 
 
 def calc_direct_response(

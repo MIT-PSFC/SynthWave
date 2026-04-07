@@ -15,23 +15,22 @@ Modified by Zander Keith
 """
 
 import os
+from typing import Optional
+
 import numpy as np
 import xarray as xr
-from typing import Optional
 from freeqdsk import geqdsk
+
 from synthwave import PACKAGE_ROOT
-
 from synthwave.magnetic_geometry.filaments import FilamentTracer
-
 from synthwave.mirnov.prep_thincurr_input import (
     gen_OFT_sensors_file,
 )
-
 from synthwave.mirnov.run_thincurr_model import (
-    get_mesh,
-    run_frequency_scan,
-    makePlots,
     correct_frequency_response,
+    get_mesh,
+    makePlots,
+    run_frequency_scan,
 )
 
 

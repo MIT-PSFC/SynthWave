@@ -2,12 +2,10 @@
 # -*- coding: utf-8 -*-
 
 import os
-import numpy as np
-import xarray as xr
-
 from typing import Optional
 
-
+import numpy as np
+import xarray as xr
 from OpenFUSIONToolkit.ThinCurr.sensor import Mirnov, save_sensors
 
 

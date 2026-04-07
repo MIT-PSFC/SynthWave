@@ -1,26 +1,21 @@
-import matplotlib.pyplot as plt
-
-from fractions import Fraction
-import pytest
-import numpy as np
-from sympy import nextprime
 import os
+from fractions import Fraction
 
+import freeqdsk
+import matplotlib.pyplot as plt
+import numpy as np
+import pytest
 import pyvista
-
-
 import vtk
-
+from sympy import nextprime
 
 from synthwave import PACKAGE_ROOT
-import freeqdsk
-
+from synthwave.magnetic_geometry.equilibrium_field import EquilibriumField
 from synthwave.magnetic_geometry.filaments import (
+    EquilibriumFilamentTracer,
     FilamentTracer,
     ToroidalFilamentTracer,
-    EquilibriumFilamentTracer,
 )
-from synthwave.magnetic_geometry.equilibrium_field import EquilibriumField
 
 vtk.vtkObject.GlobalWarningDisplayOff()
 pyvista.OFF_SCREEN = True

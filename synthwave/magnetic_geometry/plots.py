@@ -1,6 +1,6 @@
 import h5py
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 from synthwave.magnetic_geometry.filaments import FilamentTracer
 

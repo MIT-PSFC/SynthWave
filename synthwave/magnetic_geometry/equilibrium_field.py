@@ -1,12 +1,11 @@
 import numpy as np
-
 from scipy.constants import mu_0
 from scipy.interpolate import RectBivariateSpline, make_smoothing_spline
 from scipy.optimize import newton
 
 from synthwave.magnetic_geometry.utils import (
-    cylindrical_to_cartesian,
     cartesian_to_cylindrical,
+    cylindrical_to_cartesian,
 )
 
 
