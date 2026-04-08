@@ -9,7 +9,6 @@ import xarray as xr
 from OpenFUSIONToolkit import OFT_env
 from OpenFUSIONToolkit.ThinCurr import ThinCurr
 
-from synthwave import VESSEL_CACHE_DIR
 from synthwave.magnetic_geometry.filaments import FilamentTracer
 
 
@@ -45,6 +44,7 @@ def calc_direct_response(
     # Calculate mutual inductances
 
     # finite element mesh -> sensor, coil -> sensor
+    # This should be fast since we haven't loaded a vessel mesh
     _, Msc, sensor_obj = tw_model.compute_Msensor(sensor_file_path)
 
     # Build driver from filaments
@@ -93,6 +93,9 @@ def calc_frequency_response(
     sensor_file_path: Optional[str] = None,
     sensor_details: Optional[xr.Dataset] = None,
     debug_plot_path: Optional[str] = None,
+    vessel_cache_path: Optional[str] = None,
+    msensor_cache_path: Optional[str] = None,
+    mcoil_cache_path: Optional[str] = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Calculate the measured frequency response at the given sensors due to filaments defined by the tracer.
@@ -108,13 +111,18 @@ def calc_frequency_response(
         mesh_file (str): Path to the vessel mesh file for ThinCurr
         working_directory (str): Directory to read/write ThinCurr files
         sensor_file_path (str): Path to the sensor file for ThinCurr
+        sensor_details (xr.Dataset): Dataset containing details about the sensors, used for debug plotting
         debug_plot_path (str, optional): If provided, path prefix to save debug plots
+
 
     Returns:
         total_response (np.ndarray): Complex array of total sensor signals [T]
         direct_response (np.ndarray): Complex array of sensor signals due to direct filament coupling [T]
         vessel_response (np.ndarray): Complex array of sensor signals due to vessel currents [T]
     """
+
+    # Directory for caching inductance matrices, which can take a long time to compute
+    # ThinCurr checks the hashes of input files to determine if cache is valid
 
     # Create thin wall model
     tw_model = ThinCurr(oft_env)
@@ -127,15 +135,19 @@ def calc_frequency_response(
     # Calculate mutual inductances
 
     # finite element mesh -> sensor, coil -> sensor
-    Msensor, Msc, sensor_obj = tw_model.compute_Msensor(sensor_file_path)
+    Msensor, Msc, _sensor_obj = tw_model.compute_Msensor(
+        sensor_file=sensor_file_path,
+        cache_file=msensor_cache_path,
+    )
 
     # filament -> finite element mesh
-    Mc = tw_model.compute_Mcoil()
+    Mc = tw_model.compute_Mcoil(
+        cache_file=mcoil_cache_path,
+    )
 
     # Build inductance matrix
-    cache_file = os.path.join(VESSEL_CACHE_DIR, os.path.basename(mesh_file))
     tw_model.compute_Lmat(
-        cache_file=cache_file,
+        cache_file=vessel_cache_path,
         use_hodlr=True,
     )
     tw_model.compute_Rmat()

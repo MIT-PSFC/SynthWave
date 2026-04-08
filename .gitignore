@@ -217,6 +217,8 @@ setup_env.sh
 # Tests
 synthwave/tests/figures/*.png
 synthwave/tests/figures/**/*.png
+synthwave/tests/**/*.h5
+synthwave/tests/**/*.save
 
 # Examples
 examples/freq_response/
