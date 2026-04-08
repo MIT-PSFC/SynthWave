@@ -46,8 +46,9 @@ def oft_env_fixture():
         {"m": 3, "n": 1},
         {"m": 4, "n": 3},
     ],
+    ids=["m2n1", "m3n2", "m-3n2", "m3n1", "m4n3"],
 )
-@pytest.mark.parametrize("major_radius", [1, 20])
+@pytest.mark.parametrize("major_radius", [1, 10])
 def test_toroidal_angles(mode, major_radius, oft_env_fixture):
     minor_radius_vessel = 0.35
     minor_radius_sensor = 0.34
