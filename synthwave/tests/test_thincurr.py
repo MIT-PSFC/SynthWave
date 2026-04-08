@@ -143,7 +143,7 @@ def test_toroidal_angles(mode, major_radius, oft_env_fixture):
             0,
             minor_radius_plasma,
             base_num_points=base_num_points,
-            scale_points=False,
+            scale_points=True,
             prevent_synthetic_structure=True,
         )
         filament_list, _ = toroidal_tracer.get_filament_list(
@@ -196,7 +196,8 @@ def test_toroidal_angles(mode, major_radius, oft_env_fixture):
         "Toroidal phase difference for direct response between sensors C and D does not match cylindrical approximation"
     )
 
-    # Poloidal phase difference for direct response may deviate due to toroidal effects
+    # Poloidal phase difference for direct response may deviate due to toroidal effects,
+    # so just check consistency between the two pairs of sensors which should be similarly affected by toroidicity
     direct_measured_phase_diff_ac = np.angle(direct_response[2] / direct_response[0])
     direct_measured_phase_diff_bd = np.angle(direct_response[3] / direct_response[1])
     assert np.isclose(
@@ -414,3 +415,138 @@ def test_calc_direct_response_matches_frequency_response(oft_env_fixture):
         rtol=1e-6,
         err_msg="calc_direct_response must match the direct component of calc_frequency_response",
     )
+
+
+@pytest.mark.parametrize("use_cache", [False, True], ids=["no_cache", "with_cache"])
+def test_sequential_state_independence(oft_env_fixture, use_cache):
+    """Alternate between two modes 8 times and verify each mode's result is consistent.
+
+    This catches ThinCurr C++ global state corruption where a variable loaded
+    for one mode (e.g. filament geometry, Mcoil) is not reloaded on the next
+    call and contaminates results for a different mode.
+    Uses a deliberately coarse mesh, few filaments, and few points to stay fast.
+    """
+    major_radius = 1
+    minor_radius_vessel = 0.35
+    minor_radius_sensor = 0.34
+    minor_radius_plasma = 0.3
+    num_filaments = nextprime(8)
+    modes = [{"m": 2, "n": 1}, {"m": 3, "n": 2}]
+    n_repeats = 4  # 4 rounds x 2 modes = 8 total calls
+
+    sensor_details = xr.Dataset(
+        data_vars={
+            "position": (
+                ("sensor", "coord"),
+                np.array(
+                    [
+                        [major_radius + minor_radius_sensor, 0.0, 0.0],
+                        [0.0, major_radius + minor_radius_sensor, 0.0],
+                    ]
+                ),
+            ),
+            "normal": (
+                ("sensor", "coord"),
+                np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+            ),
+            "radius": ("sensor", np.array([0.01, 0.01])),
+        },
+        coords={"sensor": ["sensor_x", "sensor_y"]},
+        attrs={"sensor_set_name": "test_sequential"},
+    )
+
+    tracers = {
+        (m["m"], m["n"]): ToroidalFilamentTracer(
+            m["m"],
+            m["n"],
+            major_radius,
+            0.0,
+            minor_radius_plasma,
+            base_num_points=20,
+            scale_points=False,
+            prevent_synthetic_structure=False,
+        )
+        for m in modes
+    }
+
+    cache_dir = None
+    if use_cache:
+        cache_dir = os.path.join(
+            PACKAGE_ROOT, "tests", "test_thincurr", "test_sequential_state"
+        )
+        os.makedirs(cache_dir, exist_ok=True)
+
+    torus_mesh_file = os.path.join(
+        cache_dir if use_cache else tempfile.mkdtemp(), "vessel_sequential.h5"
+    )
+    if not os.path.exists(torus_mesh_file):
+        torus_mesh = create_torus_mesh(
+            major_radius, minor_radius_vessel, ntheta=11, nphi=23
+        )
+        torus_mesh.write_to_file(torus_mesh_file)
+
+    # results[mode_key][round] = (total, direct, vessel)
+    results = {(m["m"], m["n"]): [] for m in modes}
+
+    for i in range(n_repeats):
+        for mode in modes:
+            key = (mode["m"], mode["n"])
+            tracer = tracers[key]
+            with tempfile.TemporaryDirectory() as working_directory:
+                filament_list, _ = tracer.get_filament_list(
+                    num_filaments=num_filaments, coordinate_system="cartesian"
+                )
+                gen_OFT_filament_and_eta_file(
+                    working_directory, filament_list, [1e-6] * len(filament_list)
+                )
+                sensor_file_path = gen_OFT_sensors_file(
+                    sensor_details, working_directory
+                )
+
+                vessel_cache_path = (
+                    os.path.join(cache_dir, "vessel.save") if use_cache else None
+                )
+                msensor_cache_path = (
+                    os.path.join(cache_dir, "Msensor.save") if use_cache else None
+                )
+                mcoil_cache_path = (
+                    os.path.join(cache_dir, f"Mcoil_m{mode['m']}n{mode['n']}_{i}.save")
+                    if use_cache
+                    else None
+                )
+
+                total, direct, vessel = calc_frequency_response(
+                    oft_env=oft_env_fixture,
+                    tracer=tracer,
+                    freq=10e3,
+                    mesh_file=torus_mesh_file,
+                    working_directory=working_directory,
+                    sensor_file_path=sensor_file_path,
+                    vessel_cache_path=vessel_cache_path,
+                    msensor_cache_path=msensor_cache_path,
+                    mcoil_cache_path=mcoil_cache_path,
+                )
+                results[key].append((total.copy(), direct.copy(), vessel.copy()))
+
+    for mode in modes:
+        key = (mode["m"], mode["n"])
+        total_ref, direct_ref, vessel_ref = results[key][0]
+        for i, (total, direct, vessel) in enumerate(results[key][1:], start=1):
+            np.testing.assert_allclose(
+                total,
+                total_ref,
+                rtol=1e-10,
+                err_msg=f"total_response for m={key[0]},n={key[1]} differs on round {i} (use_cache={use_cache})",
+            )
+            np.testing.assert_allclose(
+                direct,
+                direct_ref,
+                rtol=1e-10,
+                err_msg=f"direct_response for m={key[0]},n={key[1]} differs on round {i} (use_cache={use_cache})",
+            )
+            np.testing.assert_allclose(
+                vessel,
+                vessel_ref,
+                rtol=1e-10,
+                err_msg=f"vessel_response for m={key[0]},n={key[1]} differs on round {i} (use_cache={use_cache})",
+            )
