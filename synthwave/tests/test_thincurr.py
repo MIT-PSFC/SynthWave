@@ -33,7 +33,7 @@ pytestmark = pytest.mark.serial
 # Fixture for oft environment so only one is created for all tests
 @pytest.fixture(scope="session")
 def oft_env_fixture():
-    oft_env = OFT_env()
+    oft_env = OFT_env(nthreads=1)
     return oft_env
 
 

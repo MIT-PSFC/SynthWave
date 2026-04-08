@@ -33,6 +33,14 @@ jobs:
 
   test:
     runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        test-file:
+          - test_utils.py
+          - test_equilibrium_field.py
+          - test_filaments.py
+          - test_thincurr.py
+    name: test (${{ matrix.test-file }})
     steps:
       - uses: actions/checkout@v4
 
@@ -48,7 +56,7 @@ jobs:
         run: ./install.sh
 
       - name: Run tests
-        run: uv run pytest synthwave/tests/
+        run: uv run pytest synthwave/tests/${{ matrix.test-file }}
 
   notebooks:
     runs-on: ubuntu-22.04
