@@ -316,9 +316,9 @@ class TestToroidalFilamentTracer:
             ratio = tick / np.pi
             frac = Fraction(int(ratio * 2), 2).limit_denominator()
             if frac.denominator == 1:
-                x_labels.append(f"${frac.numerator}\pi$")
+                x_labels.append(rf"${frac.numerator}\pi$")
             else:
-                x_labels.append(f"${frac.numerator}\pi/{frac.denominator}$")
+                x_labels.append(rf"${frac.numerator}\pi/{frac.denominator}$")
 
         # Plot real component of current
         scatter1 = ax1.scatter(
@@ -542,7 +542,7 @@ class TestEquilibriumFilamentTracer:
     """Test the EquilibriumFilamentTracer class."""
 
     fig_dir = os.path.join(FIG_DIR, "test_equilibrium_filament_tracer")
-    eqdsk_file = os.path.join(PACKAGE_ROOT, "input_data", "cmod", "g1051202011.1000")
+    eqdsk_file = os.path.join(PACKAGE_ROOT, "mirnov", "input_data", "g1051202011.1000")
     with open(eqdsk_file, "r") as f:
         eqdsk = freeqdsk.geqdsk.read(f)
 
@@ -662,14 +662,14 @@ class TestEquilibriumFilamentTracer:
             frac = Fraction(int(ratio * 2), 2).limit_denominator()
             if frac.denominator == 1:
                 if frac.numerator > 0:
-                    x_labels.append(f"${frac.numerator}\pi$")
+                    x_labels.append(rf"${frac.numerator}\pi$")
                 else:
-                    x_labels.append(f"${frac.numerator}\pi$")
+                    x_labels.append(rf"${frac.numerator}\pi$")
             else:
                 if frac.numerator > 0:
-                    x_labels.append(f"${frac.numerator}\pi/{frac.denominator}$")
+                    x_labels.append(rf"${frac.numerator}\pi/{frac.denominator}$")
                 else:
-                    x_labels.append(f"$-{abs(frac.numerator)}\pi/{frac.denominator}$")
+                    x_labels.append(rf"$-{abs(frac.numerator)}\pi/{frac.denominator}$")
 
         # Plot real component of current
         scatter1 = ax1.scatter(

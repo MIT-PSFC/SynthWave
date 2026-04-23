@@ -21,7 +21,8 @@ from synthwave.magnetic_geometry.utils import angle_domain, wrapped_diff
 
 
 # Fixture for oft environment so only one is created for all tests
-@pytest.fixture
+# Use session scope since OFT_env can only be created once per python kernel
+@pytest.fixture(scope="session")
 def oft_env_fixture():
     oft_env = OFT_env()
     return oft_env

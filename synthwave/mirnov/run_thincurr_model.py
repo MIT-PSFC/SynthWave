@@ -18,6 +18,7 @@ def calc_direct_response(
     sensor_details: xr.Dataset,
     sensor_file_path: str,
     working_directory: str,
+    debug: bool = True,
 ) -> xr.Dataset:
     """
     Calculate only the direct filament to sensor responses (no vessel currents) at the given sensors due to filaments defined by the tracer.
@@ -28,6 +29,11 @@ def calc_direct_response(
     # Create thin wall model
     tw_model = ThinCurr(oft_env)
     try:
+        if debug:
+            print(
+                "Setting up ThinCurr model with mesh file: %s and xml file: %s"
+                % (mesh_file, os.path.join(working_directory, "oft_in.xml"))
+            )
         tw_model.setup_model(
             mesh_file=mesh_file,
             xml_filename=os.path.join(working_directory, "oft_in.xml"),
@@ -35,9 +41,10 @@ def calc_direct_response(
 
         tw_model.setup_io(working_directory)
     except Exception as e:
-        print(f"Error setting up ThinCurr model: {e}")
-        print(f"Mesh file: {mesh_file}")
-        print(f"xml file: {os.path.join(working_directory, 'oft_in.xml')}")
+        if debug:
+            print(f"Error setting up ThinCurr model: {e}")
+            print(f"Mesh file: {mesh_file}")
+            print(f"xml file: {os.path.join(working_directory, 'oft_in.xml')}")
         raise e
 
     # Calculate mutual inductances
@@ -134,7 +141,7 @@ def calc_frequency_response(
     cache_file = os.path.join(VESSEL_CACHE_DIR, os.path.basename(mesh_file))
     tw_model.compute_Lmat(
         cache_file=cache_file,
-        use_hodlr=True,
+        use_hodlr=False,
     )
     tw_model.compute_Rmat()
 
@@ -152,6 +159,7 @@ def calc_frequency_response(
     driver[1, :] = np.dot(filament_currents.imag, Mc)
 
     # Calculate mesh response at given frequency
+    # Disable HODLR compression to improve convergence
     mesh_response_matrix = tw_model.compute_freq_response(fdriver=driver, freq=freq)
 
     # Contribution from mesh current to the sensor
@@ -331,6 +339,7 @@ def run_frequency_scan(
     )
 
     # Test one frequency
+    # Disable HODLR compression to improve convergence
     result = tw_mesh.compute_freq_response(fdriver=driver, freq=freq)
 
     # contribution from the mesh current to the sensor, with the mesh current at a given frequency

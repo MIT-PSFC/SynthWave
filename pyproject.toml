@@ -10,15 +10,15 @@ authors = [
 ]
 dependencies = [
     "pre-commit>=4.3.0",
-    "openfusiontoolkit",
     "freeqdsk>=0.5.2",
     "xarray>=2025.1.0",
     "scipy>=1.16.2",
     "pyvista>=0.46.3",
     "matplotlib>=3.10.7",
-    "h5py>=3.15.1",
     "netcdf4>=1.7.3",
     "sympy>=1.14.0",
+    "openfusiontoolkit",
+    "h5py>=3.14.0",
 ]
 
 [dependency-groups]
@@ -34,11 +34,11 @@ dev = [
     "yamllint>=1.37.1",
 ]
 
-[tool.uv.sources]
-openfusiontoolkit = {path = "submodules/OpenFUSIONToolkit/python", editable = true}
-
 [tool.isort]
 profile = "black"
+
+[tool.uv.sources]
+openfusiontoolkit = { path = "submodules/openfusiontoolkit-1.0.0b7.dev0-py3-none-manylinux_2_28_x86_64.whl" }
 
 [build-system]
 build-backend = "hatchling.build"
