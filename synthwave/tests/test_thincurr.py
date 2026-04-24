@@ -120,19 +120,21 @@ def test_toroidal_angles(mode, major_radius, oft_env_fixture):
     os.makedirs(cache_dir, exist_ok=True)
 
     # Make vessel mesh and cache it since it doesn't depend on filament geometry
-    torus_mesh_file = os.path.join(cache_dir, f"vessel_R{major_radius}.h5")
+    torus_mesh_file = os.path.join(cache_dir, f"vessel_R{major_radius}_nt64_np256.h5")
     if not os.path.exists(torus_mesh_file):
         torus_mesh = create_torus_mesh(
-            major_radius, minor_radius_vessel, ntheta=64, nphi=128
+            major_radius, minor_radius_vessel, ntheta=64, nphi=256
         )
         torus_mesh.write_to_file(torus_mesh_file)
 
-    vessel_cache_path = os.path.join(cache_dir, f"vessel_R{major_radius}.save")
+    vessel_cache_path = os.path.join(
+        cache_dir, f"vessel_R{major_radius}_nt64_np256.save"
+    )
     sensor_cache_path = os.path.join(
-        cache_dir, f"Msensor_m{mode['m']}_n{mode['n']}_R{major_radius}.save"
+        cache_dir, f"Msensor_m{mode['m']}_n{mode['n']}_R{major_radius}_nt64_np256.save"
     )
     mcoil_cache_path = os.path.join(
-        cache_dir, f"Mcoil_m{mode['m']}_n{mode['n']}_R{major_radius}.save"
+        cache_dir, f"Mcoil_m{mode['m']}_n{mode['n']}_R{major_radius}_nt64_np256.save"
     )
 
     with tempfile.TemporaryDirectory() as working_directory:
