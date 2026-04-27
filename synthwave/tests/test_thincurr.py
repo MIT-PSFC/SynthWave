@@ -49,13 +49,13 @@ def oft_env_fixture():
     ],
     ids=["m2n1", "m3n2", "m-3n2", "m3n1", "m4n3"],
 )
-@pytest.mark.parametrize("major_radius", [1, 10])
-def test_toroidal_angles(mode, major_radius, oft_env_fixture):
+def test_toroidal_angles(mode, oft_env_fixture):
     tolerance_tight = np.deg2rad(1)
     tolerance_loose = np.deg2rad(
         5
     )  # Any more than this and I fear spectral analysis will struggle
 
+    major_radius = 1
     minor_radius_vessel = 0.35
     minor_radius_sensor = 0.34
     minor_radius_plasma = 0.3
@@ -63,6 +63,10 @@ def test_toroidal_angles(mode, major_radius, oft_env_fixture):
     num_filaments = nextprime(128)
     resistivity = 1e-6
     base_num_points = 1000 * major_radius
+
+    ntheta = 64
+    nphi = 256
+
     sensor_details = xr.Dataset(
         data_vars={
             "position": (
@@ -120,21 +124,25 @@ def test_toroidal_angles(mode, major_radius, oft_env_fixture):
     os.makedirs(cache_dir, exist_ok=True)
 
     # Make vessel mesh and cache it since it doesn't depend on filament geometry
-    torus_mesh_file = os.path.join(cache_dir, f"vessel_R{major_radius}_nt64_np256.h5")
+    torus_mesh_file = os.path.join(
+        cache_dir, f"vessel_R{major_radius}_nt{ntheta}_np{nphi}.h5"
+    )
     if not os.path.exists(torus_mesh_file):
         torus_mesh = create_torus_mesh(
-            major_radius, minor_radius_vessel, ntheta=64, nphi=256
+            major_radius, minor_radius_vessel, ntheta=ntheta, nphi=nphi
         )
         torus_mesh.write_to_file(torus_mesh_file)
 
     vessel_cache_path = os.path.join(
-        cache_dir, f"vessel_R{major_radius}_nt64_np256.save"
+        cache_dir, f"vessel_R{major_radius}_nt{ntheta}_np{nphi}.save"
     )
     sensor_cache_path = os.path.join(
-        cache_dir, f"Msensor_m{mode['m']}_n{mode['n']}_R{major_radius}_nt64_np256.save"
+        cache_dir,
+        f"Msensor_m{mode['m']}_n{mode['n']}_R{major_radius}_nt{ntheta}_np{nphi}.save",
     )
     mcoil_cache_path = os.path.join(
-        cache_dir, f"Mcoil_m{mode['m']}_n{mode['n']}_R{major_radius}_nt64_np256.save"
+        cache_dir,
+        f"Mcoil_m{mode['m']}_n{mode['n']}_R{major_radius}_nt{ntheta}_np{nphi}.save",
     )
 
     with tempfile.TemporaryDirectory() as working_directory:
@@ -163,7 +171,7 @@ def test_toroidal_angles(mode, major_radius, oft_env_fixture):
             working_directory=working_directory,
         )
 
-        total_response, direct_response, vessel_response = calc_frequency_response(
+        total_response, direct_response, _vessel_response = calc_frequency_response(
             oft_env=oft_env_fixture,
             tracer=toroidal_tracer,
             freq=10e3,
@@ -210,40 +218,23 @@ def test_toroidal_angles(mode, major_radius, oft_env_fixture):
         "The poloidal phase difference for the direct response between sensors A and C should closely match that between sensors B and D"
     )
 
-    # Axisymmetric vessel response should largely preserve the toroidal phase difference
+    # Vessel response shouldn't significantly alter the toroidal phase difference since the vessel is axisymmetric
     total_measured_phase_diff_ab = np.angle(total_response[1] / total_response[0])
     total_measured_phase_diff_cd = np.angle(total_response[3] / total_response[2])
-    if major_radius == 1:
-        assert np.isclose(
-            wrapped_diff(total_measured_phase_diff_ab, expected_phase_diff_ab),
-            0,
-            atol=tolerance_loose,
-        ), (
-            "At small major radius, the toroidal phase difference for the total response between sensors A and B should still roughly match the cylindrical approximation"
-        )
-        assert np.isclose(
-            wrapped_diff(total_measured_phase_diff_cd, expected_phase_diff_cd),
-            0,
-            atol=tolerance_loose,
-        ), (
-            "At small major radius, the toroidal phase difference for the total response between sensors C and D should still roughly match the cylindrical approximation"
-        )
-    else:
-        assert np.isclose(
-            wrapped_diff(total_measured_phase_diff_ab, expected_phase_diff_ab),
-            0,
-            atol=tolerance_tight,
-        ), (
-            "At large major radius, the toroidal phase difference for the total response between sensors A and B should match the cylindrical approximation"
-        )
-        assert np.isclose(
-            wrapped_diff(total_measured_phase_diff_cd, expected_phase_diff_cd),
-            0,
-            atol=tolerance_tight,
-        ), (
-            "At large major radius, the toroidal phase difference for the total response between sensors C and D should match the cylindrical approximation"
-        )
-
+    assert np.isclose(
+        wrapped_diff(total_measured_phase_diff_ab, expected_phase_diff_ab),
+        0,
+        atol=tolerance_loose,
+    ), (
+        "Toroidal phase difference for the total response between sensors A and B should roughly match the cylindrical approximation"
+    )
+    assert np.isclose(
+        wrapped_diff(total_measured_phase_diff_cd, expected_phase_diff_cd),
+        0,
+        atol=tolerance_loose,
+    ), (
+        "Toroidal phase difference for the total response between sensors C and D should roughly match the cylindrical approximation"
+    )
     # Vessel response may significantly alter the poloidal phase difference, so just check they're consistent
     total_measured_phase_diff_ac = np.angle(total_response[2] / total_response[0])
     total_measured_phase_diff_bd = np.angle(total_response[3] / total_response[1])

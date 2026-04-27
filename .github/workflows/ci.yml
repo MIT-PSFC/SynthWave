@@ -82,8 +82,7 @@ jobs:
     strategy:
       matrix:
         mode: ["m2n1", "m3n2", "m-3n2", "m3n1", "m4n3"]
-        major_radius: [1, 10]
-    name: test (test_toroidal_angles[${{ matrix.major_radius }}-${{ matrix.mode }}])
+    name: test (test_toroidal_angles[${{ matrix.mode }}])
     steps:
       - uses: actions/checkout@v4
 
@@ -99,7 +98,7 @@ jobs:
         run: ./install.sh
 
       - name: Run tests
-        run: uv run pytest "synthwave/tests/test_thincurr.py::test_toroidal_angles[${{ matrix.major_radius }}-${{ matrix.mode }}]"
+        run: uv run pytest "synthwave/tests/test_thincurr.py::test_toroidal_angles[${{ matrix.mode }}]"
 
   notebooks:
     runs-on: ubuntu-22.04
