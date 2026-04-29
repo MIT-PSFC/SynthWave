@@ -457,61 +457,34 @@ class EquilibriumFilamentTracer(FilamentTracer):
             known_phis = np.linspace(
                 0, 2 * np.pi * m_local / n_local, (2 * n_local) + 1
             ) * np.sign(phi[-1])
+            known_etas = np.linspace(0, 2 * np.pi, (2 * n_local) + 1)
 
-            # If actual phi deviates from expected by more than 50%, the trace is
-            # fundamentally broken (e.g. wrong units or wrong flux surface).
-            relative_deviation = abs(phi[-1] - known_phis[-1]) / abs(known_phis[-1])
-            if relative_deviation > 0.5:
+            # If actual phi significantly deviates from known phis, log a critical warning
+            if not np.isclose(phi[-1], known_phis[-1], atol=0.5):
                 logger.critical(
-                    f"Final phi value is far from target!\nExpected: {known_phis[-1]}\nActual: {phi[-1]}"
+                    f"Final phi value deviates significantly from known phi values!\nExpected: {known_phis[-1]}\nActual: {phi[-1]}"
                 )
-            else:
-                for i, known_phi_start in enumerate(known_phis[:-1]):
-                    known_phi_end = known_phis[i + 1]
-                    is_last_segment = i == len(known_phis) - 2
-
-                    if np.sign(phi[-1]) == 1:
-                        if is_last_segment:
-                            phi_indices = np.squeeze(np.where(phi >= known_phi_start))
-                        else:
-                            phi_indices = np.squeeze(
-                                np.where(
-                                    (phi >= known_phi_start) & (phi <= known_phi_end)
-                                )
-                            )
-                    else:
-                        if is_last_segment:
-                            phi_indices = np.squeeze(np.where(phi <= known_phi_start))
-                        else:
-                            phi_indices = np.squeeze(
-                                np.where(
-                                    (phi <= known_phi_start) & (phi >= known_phi_end)
-                                )
-                            )
-
+            
+            
+            for i, known_phi_start in enumerate(known_phis[:-1]):
+                known_phi_end = known_phis[i + 1]
                 # TODO(ZanderKeith) This is subtly incorrect
                 # We don't want to select indices by phi values that are already wrong
                 # we want to select indices by eta values that correspond to the known phi range
-                if np.sign(phi[-1]) == 1:
-                    phi_indices = np.squeeze(
-                        np.where((phi >= known_phi_start) & (phi <= known_phi_end))
-                    )
-                else:
-                    phi_indices = np.squeeze(
-                        np.where((phi <= known_phi_start) & (phi >= known_phi_end))
-                    )
-                # Sanity check for array shape
-                phi_indices = np.atleast_1d(phi_indices)
 
-                actual_phi_start = phi[phi_indices[0]]
-                actual_phi_end = phi[phi_indices[-1]]
+                segment_idxs = np.squeeze(
+                    np.where((filament_etas >= known_etas[i]) & (filament_etas <= known_etas[i + 1]))
+                )
+
+                actual_phi_start = phi[segment_idxs[0]]
+                actual_phi_end = phi[segment_idxs[-1]]
                 correction_factor = (known_phi_end - known_phi_start) / (
                     actual_phi_end - actual_phi_start
                 )
 
-                phi[phi_indices] = (
+                phi[segment_idxs] = (
                     known_phi_start
-                    + (phi[phi_indices] - actual_phi_start) * correction_factor
+                    + (phi[segment_idxs] - actual_phi_start) * correction_factor
                 )
 
             filament_points = np.column_stack((R, phi, Z))
