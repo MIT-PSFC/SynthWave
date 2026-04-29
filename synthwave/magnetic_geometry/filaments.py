@@ -14,6 +14,7 @@ from synthwave.magnetic_geometry.equilibrium_field import (
     EquilibriumField,
 )
 from synthwave.magnetic_geometry.utils import cylindrical_to_cartesian
+from loguru import logger
 
 
 class FilamentTracer(ABC):
@@ -447,6 +448,12 @@ class EquilibriumFilamentTracer(FilamentTracer):
             known_phis = np.linspace(
                 0, 2 * np.pi * m_local / n_local, (2 * n_local) + 1
             ) * np.sign(phi[-1])
+
+            # If actual phi significantly deviates from known phis, log a critical warning
+            if not np.isclose(phi[-1], known_phis[-1], atol=0.5):
+                logger.critical(
+                    f"Final phi value deviates significantly from known phi values!\nExpected: {known_phis[-1]}\nActual: {phi[-1]}"
+                )
 
             for i, known_phi_start in enumerate(known_phis[:-1]):
                 known_phi_end = known_phis[i + 1]
