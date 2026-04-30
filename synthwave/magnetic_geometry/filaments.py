@@ -350,7 +350,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
             maxiter=100,
             xtol=1e-3,
             method="toms748",
-            bracket=[self.eq_field.eqdsk.rmagx, self.eq_field.eqdsk.rmagx + 0.5],
+            bracket=[self.eq_field.eqdsk.rmagx, self.eq_field.eqdsk.rbdry.max()],
         ).root
 
         # Sliding along minor radius a to meet the rational surface
@@ -397,7 +397,10 @@ class EquilibriumFilamentTracer(FilamentTracer):
                 maxiter=100,
                 xtol=1e-3,
                 method="toms748",
-                bracket=[0, 0.35],
+                bracket=[
+                    0,
+                    self.eq_field.eqdsk.rbdry.max() - self.eq_field.eqdsk.rmagx,
+                ],  # Slightly overlarge upper limit: outer limiter surface
             ).root
 
             poloidal_points[i, :] = [_R_a(eta, a_next), _Z_a(eta, a_next), a_next]
