@@ -350,7 +350,10 @@ class EquilibriumFilamentTracer(FilamentTracer):
             maxiter=100,
             xtol=1e-3,
             method="toms748",
-            bracket=[self.eq_field.eqdsk.rmagx, self.eq_field.eqdsk.rbdry.max()],
+            bracket=[
+                self.eq_field.eqdsk.rmagx,
+                self.eq_field.eqdsk.rbdry.max() + 0.2,
+            ],  # Slightly overlarge upper limit: outer limiter surface
         ).root
 
         # Sliding along minor radius a to meet the rational surface
@@ -399,7 +402,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
                 method="toms748",
                 bracket=[
                     0,
-                    self.eq_field.eqdsk.rbdry.max() - self.eq_field.eqdsk.rmagx,
+                    self.eq_field.eqdsk.rbdry.max() - self.eq_field.eqdsk.rmagx + 0.2,
                 ],  # Slightly overlarge upper limit: outer limiter surface
             ).root
 
