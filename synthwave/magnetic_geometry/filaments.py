@@ -13,6 +13,61 @@ from synthwave.magnetic_geometry.equilibrium_field import (
 )
 
 
+def _solve_root_with_adaptive_bracket(
+    f,
+    x0: float,
+    fprime,
+    bracket: tuple[float, float],
+    xtol: float = 1e-3,
+    maxiter: int = 100,
+    n_scan: int = 81,
+) -> float:
+    """Solve f(x)=0 with bracket->scan->Newton fallback."""
+    """Use an adaptive strategy with search limits, should have improved convergence"""
+
+    a, b = float(bracket[0]), float(bracket[1])
+    if b < a:
+        a, b = b, a
+
+    fa = f(a)
+    fb = f(b)
+    if np.isclose(fa, 0.0):
+        return a
+    if np.isclose(fb, 0.0):
+        return b
+
+    if np.sign(fa) != np.sign(fb):
+        return root_scalar(
+            f=f,
+            method="toms748",
+            bracket=[a, b],
+            xtol=xtol,
+            maxiter=maxiter,
+        ).root
+
+    # If endpoints have the same sign, scan for a local sign change and
+    # prefer the interval closest to x0. [e.g. outer boundry is getting close
+    #  to a magnetic coil, so Psi is concave across the boundry]
+    xs = np.linspace(a, b, n_scan)
+    fs = np.array([f(x) for x in xs])
+    finite = np.isfinite(fs)
+    for i in np.where(finite & np.isclose(fs, 0.0))[0]:
+        return float(xs[i])
+
+    # Last resort: open method from the local guess.
+    result = root_scalar(
+        f=f,
+        x0=float(np.clip(x0, a, b)),
+        fprime=fprime,
+        method="newton",
+        xtol=xtol,
+        maxiter=maxiter,
+    )
+    if not result.converged:
+        raise ValueError("Root solve did not converge")
+    return float(result.root)
+
+
 class FilamentTracer(ABC):
     """Abstract class for filament representation."""
 
@@ -343,18 +398,17 @@ class EquilibriumFilamentTracer(FilamentTracer):
         #     maxiter=800,
         #     tol=1e-3,
         # )
-        R_start = root_scalar(
+        R_start = _solve_root_with_adaptive_bracket(
             f=lambda R: self.eq_field.psi.ev(R, Z_start) - psi_q,
             x0=R_guess,
             fprime=lambda R: self.eq_field.psi.ev(R, Z_start, dx=1, dy=0),
-            maxiter=100,
-            xtol=1e-3,
-            method="toms748",
-            bracket=[
+            bracket=(
                 self.eq_field.eqdsk.rmagx,
                 self.eq_field.eqdsk.rbdry.max() + 0.2,
-            ],  # Slightly overlarge upper limit: outer limiter surface
-        ).root
+            ),  # Slightly overlarge upper limit: outer limiter surface
+            xtol=1e-3,
+            maxiter=100,
+        )
 
         # Sliding along minor radius a to meet the rational surface
         def _R_a(eta, a):
@@ -393,18 +447,17 @@ class EquilibriumFilamentTracer(FilamentTracer):
             #     maxiter=5000,
             #     tol=5e-3,
             # )
-            a_next = root_scalar(
+            a_next = _solve_root_with_adaptive_bracket(
                 f=lambda a: self.eq_field.psi.ev(_R_a(eta, a), _Z_a(eta, a)) - psi_q,
                 x0=a_guess,
                 fprime=lambda a: psi_prime_a(eta, a),
-                maxiter=100,
-                xtol=1e-3,
-                method="toms748",
-                bracket=[
+                bracket=(
                     0,
                     self.eq_field.eqdsk.rbdry.max() - self.eq_field.eqdsk.rmagx + 0.2,
-                ],  # Slightly overlarge upper limit: outer limiter surface
-            ).root
+                ),  # Slightly overlarge upper limit: outer limiter surface
+                xtol=1e-3,
+                maxiter=100,
+            )
 
             poloidal_points[i, :] = [_R_a(eta, a_next), _Z_a(eta, a_next), a_next]
 
