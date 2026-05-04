@@ -6,6 +6,7 @@ from typing import Optional
 
 import numpy as np
 import xarray as xr
+from loguru import logger
 from scipy.interpolate import make_interp_spline
 from scipy.optimize import newton
 from sympy import nextprime
@@ -14,7 +15,6 @@ from synthwave.magnetic_geometry.equilibrium_field import (
     EquilibriumField,
 )
 from synthwave.magnetic_geometry.utils import cylindrical_to_cartesian
-from loguru import logger
 
 
 class FilamentTracer(ABC):
@@ -249,7 +249,7 @@ class ToroidalFilamentTracer(FilamentTracer):
 class EquilibriumFilamentTracer(FilamentTracer):
     """Filament traced along an equilibrium magnetic field."""
 
-    trace_cache = {} # Cache for traced filaments to avoid redundant computations, keyed by num points and trace type
+    trace_cache = {}  # Cache for traced filaments to avoid redundant computations, keyed by num points and trace type
 
     class TraceType(Enum):
         CYLINDRICAL = 0  # Cylindrical approximation of the magnetic geometry
@@ -336,7 +336,9 @@ class EquilibriumFilamentTracer(FilamentTracer):
 
         key = (num_points, trace_type)
         if key in self.trace_cache:
-            logger.info(f"Using cached filament trace for num_points={num_points} and trace_type={trace_type}")
+            logger.info(
+                f"Using cached filament trace for num_points={num_points} and trace_type={trace_type}"
+            )
             return self.trace_cache[key]
 
         # Correction for m/n as integer multiples (otherwise leads to ``wandering'' filaments)
@@ -456,14 +458,36 @@ class EquilibriumFilamentTracer(FilamentTracer):
                 0, 2 * np.pi * m_local / n_local, (2 * n_local) + 1
             ) * np.sign(phi[-1])
 
-            # If actual phi significantly deviates from known phis, log a critical warning
-            if not np.isclose(phi[-1], known_phis[-1], atol=0.5):
+            # If actual phi deviates from expected by more than 50%, the trace is
+            # fundamentally broken (e.g. wrong units or wrong flux surface).
+            relative_deviation = abs(phi[-1] - known_phis[-1]) / abs(known_phis[-1])
+            if relative_deviation > 0.5:
                 logger.critical(
-                    f"Final phi value deviates significantly from known phi values!\nExpected: {known_phis[-1]}\nActual: {phi[-1]}"
+                    f"Final phi value is far from target!\nExpected: {known_phis[-1]}\nActual: {phi[-1]}"
                 )
+            else:
+                for i, known_phi_start in enumerate(known_phis[:-1]):
+                    known_phi_end = known_phis[i + 1]
+                    is_last_segment = i == len(known_phis) - 2
 
-            for i, known_phi_start in enumerate(known_phis[:-1]):
-                known_phi_end = known_phis[i + 1]
+                    if np.sign(phi[-1]) == 1:
+                        if is_last_segment:
+                            phi_indices = np.squeeze(np.where(phi >= known_phi_start))
+                        else:
+                            phi_indices = np.squeeze(
+                                np.where(
+                                    (phi >= known_phi_start) & (phi <= known_phi_end)
+                                )
+                            )
+                    else:
+                        if is_last_segment:
+                            phi_indices = np.squeeze(np.where(phi <= known_phi_start))
+                        else:
+                            phi_indices = np.squeeze(
+                                np.where(
+                                    (phi <= known_phi_start) & (phi >= known_phi_end)
+                                )
+                            )
 
                 # TODO(ZanderKeith) This is subtly incorrect
                 # We don't want to select indices by phi values that are already wrong
@@ -476,7 +500,6 @@ class EquilibriumFilamentTracer(FilamentTracer):
                     phi_indices = np.squeeze(
                         np.where((phi <= known_phi_start) & (phi >= known_phi_end))
                     )
-
                 # Sanity check for array shape
                 phi_indices = np.atleast_1d(phi_indices)
 
@@ -494,7 +517,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
             filament_points = np.column_stack((R, phi, Z))
         else:
             raise ValueError("Unknown tracing trace_type")
-        
+
         # Cache the traced filament
         self.trace_cache[key] = (filament_points, filament_etas)
 
