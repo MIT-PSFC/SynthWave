@@ -249,6 +249,8 @@ class ToroidalFilamentTracer(FilamentTracer):
 class EquilibriumFilamentTracer(FilamentTracer):
     """Filament traced along an equilibrium magnetic field."""
 
+    trace_cache = {} # Cache for traced filaments to avoid redundant computations, keyed by num points and trace type
+
     class TraceType(Enum):
         CYLINDRICAL = 0  # Cylindrical approximation of the magnetic geometry
         NAIVE = 1  # Naive tracing, following the rational surface but not the field
@@ -331,6 +333,11 @@ class EquilibriumFilamentTracer(FilamentTracer):
             num_points = self.num_points
         if trace_type is None:
             trace_type = self.default_trace_type
+
+        key = (num_points, trace_type)
+        if key in self.trace_cache:
+            logger.info(f"Using cached filament trace for num_points={num_points} and trace_type={trace_type}")
+            return self.trace_cache[key]
 
         # Correction for m/n as integer multiples (otherwise leads to ``wandering'' filaments)
         ratio = Fraction(self.m, self.n)
@@ -458,6 +465,9 @@ class EquilibriumFilamentTracer(FilamentTracer):
             for i, known_phi_start in enumerate(known_phis[:-1]):
                 known_phi_end = known_phis[i + 1]
 
+                # TODO(ZanderKeith) This is subtly incorrect
+                # We don't want to select indices by phi values that are already wrong
+                # we want to select indices by eta values that correspond to the known phi range
                 if np.sign(phi[-1]) == 1:
                     phi_indices = np.squeeze(
                         np.where((phi >= known_phi_start) & (phi <= known_phi_end))
@@ -484,5 +494,8 @@ class EquilibriumFilamentTracer(FilamentTracer):
             filament_points = np.column_stack((R, phi, Z))
         else:
             raise ValueError("Unknown tracing trace_type")
+        
+        # Cache the traced filament
+        self.trace_cache[key] = (filament_points, filament_etas)
 
         return filament_points, filament_etas

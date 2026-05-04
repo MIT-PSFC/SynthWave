@@ -44,7 +44,7 @@ def calc_direct_response(
     # Calculate mutual inductances
 
     # finite element mesh -> sensor, coil -> sensor
-    # This should be fast since we haven't loaded a vessel mesh
+    # This should be fast since we're using a simple vessel mesh
     _, Msc, sensor_obj = tw_model.compute_Msensor(sensor_file_path)
 
     # Build driver from filaments
