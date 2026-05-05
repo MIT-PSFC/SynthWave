@@ -3,7 +3,7 @@ name = "synthwave"
 version = "0.1.0"
 description = "Generating synthetic magnetic measurements of MHD modes with ThinCurr"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 authors = [
     {name = "Rian Chandra", email = "rianc@mit.edu"},
     {name = "Zander Keith", email = "zkeith@mit.edu"},

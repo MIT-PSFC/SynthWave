@@ -456,7 +456,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
                     self.eq_field.eqdsk.rbdry.max() - self.eq_field.eqdsk.rmagx + 0.2,
                 ),  # Slightly overlarge upper limit: outer limiter surface
                 xtol=1e-3,
-                maxiter=100,
+                maxiter=5000,
             )
 
             poloidal_points[i, :] = [_R_a(eta, a_next), _Z_a(eta, a_next), a_next]
