@@ -450,42 +450,23 @@ class EquilibriumFilamentTracer(FilamentTracer):
                 phi = np.cumsum(d_phi_avg) - d_phi_avg[0]
 
             # Numerical correction to ensure final point is at the proper angle
-            # We can do this multiple times, whenever we know for sure that the phi is a multiple of pi * m / n
 
-            # Sign flip necessary to account for helicity direction so known_phis matches the sign of the traced phi values
+            # Sign flip necessary to account for helicity direction so known_phi_end matches the sign of the traced phi values
             # Note: The improved d_phi method should ensure this is always correct now [e.g. the correction factor is no longer strictly necessary]
-            known_phis = np.linspace(
-                0, 2 * np.pi * m_local / n_local, (2 * n_local) + 1
-            ) * np.sign(phi[-1])
-            known_etas = np.linspace(0, 2 * np.pi, (2 * n_local) + 1)
+            # TODO(ZanderKeith) the improved d_phi method is most certainly not always correct, discuss with Rian
+            known_phi_end = self.helicity_sign * 2 * np.pi * m_local / n_local
 
             # If actual phi significantly deviates from known phis, log a critical warning
-            if not np.isclose(phi[-1], known_phis[-1], atol=0.5):
+            if not np.isclose(phi[-1], known_phi_end, atol=0.5):
                 logger.critical(
-                    f"Final phi value deviates significantly from known phi values!\nExpected: {known_phis[-1]}\nActual: {phi[-1]}"
-                )
-            
-            
-            for i, known_phi_start in enumerate(known_phis[:-1]):
-                known_phi_end = known_phis[i + 1]
-                # TODO(ZanderKeith) This is subtly incorrect
-                # We don't want to select indices by phi values that are already wrong
-                # we want to select indices by eta values that correspond to the known phi range
-
-                segment_idxs = np.squeeze(
-                    np.where((filament_etas >= known_etas[i]) & (filament_etas <= known_etas[i + 1]))
+                    f"Final phi value deviates significantly from known phi values!\nExpected: {known_phi_end}\nActual: {phi[-1]}"
                 )
 
-                actual_phi_start = phi[segment_idxs[0]]
-                actual_phi_end = phi[segment_idxs[-1]]
-                correction_factor = (known_phi_end - known_phi_start) / (
-                    actual_phi_end - actual_phi_start
-                )
+            actual_phi_start = phi[0]
+            actual_phi_end = phi[-1]
+            correction_factor = known_phi_end / (actual_phi_end - actual_phi_start)
 
-                phi[segment_idxs] = (
-                    known_phi_start
-                    + (phi[segment_idxs] - actual_phi_start) * correction_factor
-                )
+            phi = (phi - actual_phi_start) * correction_factor
 
             filament_points = np.column_stack((R, phi, Z))
         else:
