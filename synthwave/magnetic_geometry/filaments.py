@@ -21,6 +21,7 @@ def _solve_root_with_adaptive_bracket(
     xtol: float = 1e-3,
     maxiter: int = 100,
     n_scan: int = 81,
+    debug_output: bool = False,
 ) -> float:
     """Solve f(x)=0 with bracket->scan->Newton fallback."""
     """Use an adaptive strategy with search limits, should have improved convergence"""
@@ -28,6 +29,10 @@ def _solve_root_with_adaptive_bracket(
     a, b = float(bracket[0]), float(bracket[1])
     if b < a:
         a, b = b, a
+
+    # Ensure that upper bound is sufficiently larger than the initial guess
+    if b - x0 < 0.2 * b:
+        b = x0 + 0.2 * b
 
     fa = f(a)
     fb = f(b)
@@ -64,6 +69,14 @@ def _solve_root_with_adaptive_bracket(
         maxiter=maxiter,
     )
     if not result.converged:
+        if debug_output:
+            print("Result: ", result)
+            print("Function values: ", fs)
+            print("X values: ", xs)
+            print("Bracket: ", bracket)
+            print("X0: ", x0)
+            print("Function: ", f)
+            print("Fprime: ", fprime)
         raise ValueError("Root solve did not converge")
     return float(result.root)
 
