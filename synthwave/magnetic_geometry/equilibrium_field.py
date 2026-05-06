@@ -2,6 +2,8 @@ import numpy as np
 from scipy.constants import mu_0
 from scipy.interpolate import RectBivariateSpline, make_smoothing_spline
 from scipy.optimize import newton
+from freeqdsk.geqdsk import GEQDSKFile
+from loguru import logger
 
 from synthwave.magnetic_geometry.utils import (
     cartesian_to_cylindrical,
@@ -38,6 +40,170 @@ def biot_savart_cylindrical(
     )
     B_cylindrical = cartesian_to_cylindrical(*B_cartesian)
     return B_cylindrical
+
+
+def convert_cocos(eqdsk: GEQDSKFile, target_cocos: int):
+    """Convert a GEQDSKFile from freeqdsk to the target COCOS
+    See `Sauter et al, 2013 <https://doi.org/10.1016/j.cpc.2012.09.010>`_.
+    Also https://crppwww.epfl.ch/~sauter/cocos/ and https://crppwww.epfl.ch/~sauter/cocos/Sauter_COORD_CONVENTIONS_COCOS_2012_updated_after_reprint_for_Appendices_and_refs.pdf
+
+    Args:
+        eqdsk: GEQDSKFile object from freeqdsk
+        target_cocos: COCOS to convert to (1-8, 11-18)
+
+    Returns:
+        A new GEQDSKFile object with the specified COCOS
+    """
+
+    if target_cocos not in [1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 16, 17, 18]:
+        raise ValueError("Invalid target COCOS: %d" % target_cocos)
+
+    sign_Ip = np.sign(float(eqdsk.cpasma))
+    sign_B0 = np.sign(float(eqdsk.bcentr))
+    psi_increasing = float(np.sign(eqdsk.sibdry - eqdsk.simagx))
+    # From table III: sign(dpsi) = sign_Bp * sign_Ip
+    sign_Bp = int(psi_increasing * sign_Ip)
+
+    # sigma_RphiZ = +1 (R,phi,Z, phi CCW): F = R*B_phi has same sign as B0.
+    # sigma_RphiZ = -1 (R,Z,phi, phi CW): stored F has opposite sign to physical B0.
+    # When bcentr=0 (not stored), fall back to sign of fpol alone.
+    fpol_sign = int(np.sign(np.nanmean(eqdsk.fpol)))
+    if sign_B0 != 0:
+        sign_RphiZ = fpol_sign * int(sign_B0)
+    else:
+        sign_RphiZ = fpol_sign
+
+    # From Table III: sigma_q = sigma_rhotp * sigma_Bp * sigma_RphiZ
+    sign_q = float(np.sign(np.nanmean(eqdsk.qpsi)))
+    sign_rhotp = int(sign_q * sign_Bp * sign_RphiZ)
+
+    def _e_Bp(eqdsk):
+        # Detect e_Bp via Grad-Shafranov residual.
+        # The GS equation for psi in Wb/rad (e_Bp=0) is:
+        #   Delta*(psi) = -(mu_0*R^2*pprime + ffprime)
+        # If psi is in Weber (e_Bp=1) the same stored pprime/ffprime satisfy:
+        #   Delta*(psi) = -(2*pi)^2 * (mu_0*R^2*pprime + ffprime)
+        # Fit alpha such that lhs = alpha * rhs_ebp0: alpha~1 -> e_Bp=0, alpha~(2*pi)^2 -> e_Bp=1.
+        R_1d = np.array(eqdsk.r_grid[:, 0], dtype=float)
+        Z_1d = np.array(eqdsk.z_grid[0, :], dtype=float)
+        psi_2d = np.array(eqdsk.psi, dtype=float)
+        if psi_2d.shape == (len(Z_1d), len(R_1d)):
+            psi_2d = psi_2d.T  # ensure (nR, nZ)
+
+        dpsi_dR = np.gradient(psi_2d, R_1d, axis=0)
+        lhs_gs = (
+            np.gradient(dpsi_dR, R_1d, axis=0)
+            - dpsi_dR / R_1d[:, None]
+            + np.gradient(np.gradient(psi_2d, Z_1d, axis=1), Z_1d, axis=1)
+        )
+
+        psi_norm_2d = np.clip(
+            (psi_2d - float(eqdsk.simagx))
+            / (float(eqdsk.sibdry) - float(eqdsk.simagx)),
+            0.0,
+            1.0,
+        )
+        pprime_raw = np.array(eqdsk.pprime, dtype=float)
+        ffprime_raw = np.array(eqdsk.ffprime, dtype=float)
+        psi_norm_1d = np.linspace(0.0, 1.0, len(pprime_raw))
+        pprime_2d = np.interp(psi_norm_2d, psi_norm_1d, pprime_raw)
+        ffprime_2d = np.interp(psi_norm_2d, psi_norm_1d, ffprime_raw)
+
+        rhs_gs = -(mu_0 * R_1d[:, None] ** 2 * pprime_2d + ffprime_2d)
+
+        sl = np.s_[3:-3, 3:-3]
+        lhs_flat = lhs_gs[sl].ravel()
+        rhs_flat = rhs_gs[sl].ravel()
+        mask = np.abs(rhs_flat) > 1e-6 * np.max(np.abs(rhs_flat))
+        alpha = np.dot(lhs_flat[mask], rhs_flat[mask]) / np.dot(
+            rhs_flat[mask], rhs_flat[mask]
+        )
+        e_Bp = 0 if abs(alpha - 1.0) < abs(alpha - (2 * np.pi) ** 2) else 1
+
+        return e_Bp
+
+    e_Bp = _e_Bp(eqdsk)
+
+    # From Table I
+    cocos_lookup = {
+        (0, +1, +1, +1): 1,
+        (1, +1, +1, +1): 11,
+        (0, +1, -1, +1): 2,
+        (1, +1, -1, +1): 12,
+        (0, -1, +1, -1): 3,
+        (1, -1, +1, -1): 13,
+        (0, -1, -1, -1): 4,
+        (1, -1, -1, -1): 14,
+        (0, +1, +1, -1): 5,
+        (1, +1, +1, -1): 15,
+        (0, +1, -1, -1): 6,
+        (1, +1, -1, -1): 16,
+        (0, -1, +1, +1): 7,
+        (1, -1, +1, +1): 17,
+        (0, -1, -1, +1): 8,
+        (1, -1, -1, +1): 18,
+    }
+    cocos_input = cocos_lookup.get((e_Bp, sign_Bp, sign_RphiZ, sign_rhotp), None)
+
+    if cocos_input is None:
+        raise ValueError(
+            "Could not determine COCOS for the given GEQDSK. Please check the signs of Bp, RphiZ, and rhotp."
+        )
+
+    if cocos_input == target_cocos:
+        logger.debug("No conversion needed, already in COCOS %d" % target_cocos)
+    else:
+        logger.debug(
+            "Converting from COCOS %d to COCOS %d" % (cocos_input, target_cocos)
+        )
+
+    # Inverse lookup: COCOS number -> (e_Bp, sigma_Bp, sigma_RphiZ, sigma_rhotp)
+    cocos_params = {v: k for k, v in cocos_lookup.items()}
+    e_Bp_i, sigma_Bp_i, sigma_RphiZ_i, sigma_rhotp_i = cocos_params[cocos_input]
+    e_Bp_o, sigma_Bp_o, sigma_RphiZ_o, sigma_rhotp_o = cocos_params[target_cocos]
+
+    # Conversion factors from Sauter 2013, Table III
+    psi_factor = (sigma_Bp_o / sigma_Bp_i) * (2 * np.pi) ** (e_Bp_o - e_Bp_i)
+    F_factor = sigma_RphiZ_o / sigma_RphiZ_i
+    q_factor = (sigma_rhotp_o * sigma_Bp_o * sigma_RphiZ_o) / (
+        sigma_rhotp_i * sigma_Bp_i * sigma_RphiZ_i
+    )
+    # pprime = dp/dpsi; ffprime = F*dF/dpsi -> both scale as 1/psi_factor
+    # (F_factor^2 = 1 always, so the F sign cancels in ffprime)
+
+    new_eqdsk = GEQDSKFile(
+        # Unchanged
+        comment=eqdsk.comment,
+        shot=eqdsk.shot,
+        nx=eqdsk.nx,
+        ny=eqdsk.ny,
+        rdim=eqdsk.rdim,
+        zdim=eqdsk.zdim,
+        rcentr=eqdsk.rcentr,
+        rleft=eqdsk.rleft,
+        zmid=eqdsk.zmid,
+        rmagx=eqdsk.rmagx,
+        zmagx=eqdsk.zmagx,
+        bcentr=eqdsk.bcentr,
+        cpasma=eqdsk.cpasma,
+        pres=eqdsk.pres,
+        nbdry=eqdsk.nbdry,
+        nlim=eqdsk.nlim,
+        rbdry=eqdsk.rbdry,
+        zbdry=eqdsk.zbdry,
+        rlim=eqdsk.rlim,
+        zlim=eqdsk.zlim,
+        # COCOS-dependent
+        simagx=float(eqdsk.simagx) * psi_factor,
+        sibdry=float(eqdsk.sibdry) * psi_factor,
+        psi=np.array(eqdsk.psi, dtype=float) * psi_factor,
+        fpol=np.array(eqdsk.fpol, dtype=float) * F_factor,
+        ffprime=np.array(eqdsk.ffprime, dtype=float) / psi_factor,
+        pprime=np.array(eqdsk.pprime, dtype=float) / psi_factor,
+        qpsi=np.array(eqdsk.qpsi, dtype=float) * q_factor,
+    )
+
+    return new_eqdsk
 
 
 class EquilibriumField:
