@@ -249,8 +249,6 @@ class ToroidalFilamentTracer(FilamentTracer):
 class EquilibriumFilamentTracer(FilamentTracer):
     """Filament traced along an equilibrium magnetic field."""
 
-    trace_cache = {}  # Cache for traced filaments to avoid redundant computations, keyed by num points and trace type
-
     class TraceType(Enum):
         CYLINDRICAL = 0  # Cylindrical approximation of the magnetic geometry
         NAIVE = 1  # Naive tracing, following the rational surface but not the field
@@ -304,6 +302,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
         self.helicity_sign = (
             helicity_sign if helicity_sign is not None else (1 if m >= 0 else -1)
         )
+        self.trace_cache = {}
 
     def trace(
         self,
