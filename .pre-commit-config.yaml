@@ -7,7 +7,7 @@ repos:
         files: \.ipynb$
         stages: [pre-commit]
         language: system
-        entry: jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace
+        entry: uv run jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace
       - id: ruff_format
         name: ruff_format 
         entry: uv run ruff format
