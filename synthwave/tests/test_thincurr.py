@@ -70,7 +70,7 @@ def test_toroidal_angles(mode, oft_env_fixture):
     sensor_details = xr.Dataset(
         data_vars={
             "position": (
-                ("sensor", "coord"),
+                ("sensor_idx", "coord"),
                 np.array(
                     [
                         [
@@ -97,7 +97,7 @@ def test_toroidal_angles(mode, oft_env_fixture):
                 ),
             ),
             "normal": (
-                ("sensor", "coord"),
+                ("sensor_idx", "coord"),
                 np.array(
                     [
                         # Normals pointing radially outward
@@ -108,10 +108,10 @@ def test_toroidal_angles(mode, oft_env_fixture):
                     ]
                 ),
             ),
-            "radius": ("sensor", np.array([0.01, 0.01, 0.01, 0.01])),
+            "radius": ("sensor_idx", np.array([0.01, 0.01, 0.01, 0.01])),
         },
         coords={
-            "sensor": np.array(["sensor_a", "sensor_b", "sensor_c", "sensor_d"]),
+            "sensor_idx": np.array(["sensor_a", "sensor_b", "sensor_c", "sensor_d"]),
         },
         attrs={
             "sensor_set_name": "test_sensors",
@@ -295,16 +295,16 @@ def test_gen_OFT_sensors_file():
     sensor_details = xr.Dataset(
         data_vars={
             "position": (
-                ("sensor", "coord"),
+                ("sensor_idx", "coord"),
                 np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
             ),
             "normal": (
-                ("sensor", "coord"),
+                ("sensor_idx", "coord"),
                 np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
             ),
-            "radius": ("sensor", np.array([0.01, 0.01])),
+            "radius": ("sensor_idx", np.array([0.01, 0.01])),
         },
-        coords={"sensor": ["A", "B"]},
+        coords={"sensor_idx": ["A", "B"]},
         attrs={"sensor_set_name": "test"},
     )
 
@@ -331,7 +331,7 @@ def test_calc_direct_response_matches_frequency_response(oft_env_fixture):
     sensor_details = xr.Dataset(
         data_vars={
             "position": (
-                ("sensor", "coord"),
+                ("sensor_idx", "coord"),
                 np.array(
                     [
                         [major_radius + minor_radius_sensor, 0.0, 0.0],
@@ -340,12 +340,12 @@ def test_calc_direct_response_matches_frequency_response(oft_env_fixture):
                 ),
             ),
             "normal": (
-                ("sensor", "coord"),
+                ("sensor_idx", "coord"),
                 np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
             ),
-            "radius": ("sensor", np.array([0.01, 0.01])),
+            "radius": ("sensor_idx", np.array([0.01, 0.01])),
         },
-        coords={"sensor": ["sensor_x", "sensor_y"]},
+        coords={"sensor_idx": ["sensor_x", "sensor_y"]},
         attrs={"sensor_set_name": "test"},
     )
 

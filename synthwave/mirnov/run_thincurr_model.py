@@ -62,18 +62,18 @@ def calc_direct_response(
     direct_response_ds = xr.Dataset(
         data_vars={
             "direct_response_real": (
-                ["sensor"],
+                ["sensor_idx"],
                 direct_response.real,
             ),
             "direct_response_imag": (
-                ["sensor"],
+                ["sensor_idx"],
                 direct_response.imag,
             ),
         },
         coords={
-            "sensor": sensor_obj[
+            "sensor_idx": sensor_obj[
                 "names"
-            ]  # Define the 'sensor' coordinate with the list of sensor names
+            ]  # Define the 'sensor_idx' coordinate with the list of sensor names
         },
         attrs={
             "mesh_file": mesh_file,
@@ -367,14 +367,14 @@ def run_frequency_scan(
     sensors_body = xr.Dataset(
         data_vars={
             "signal": (
-                ["sensor"],
+                ["sensor_idx"],
                 sensor_signals,
-            )  # Use a single data variable with a 'sensor' dimension
+            )  # Use a single data variable with a 'sensor_idx' dimension
         },
         coords={
-            "sensor": sensor_obj[
+            "sensor_idx": sensor_obj[
                 "names"
-            ]  # Define the 'sensor' coordinate with the list of sensor names
+            ]  # Define the 'sensor_idx' coordinate with the list of sensor names
         },
         attrs={
             "mesh_file": mesh_file,
@@ -524,10 +524,10 @@ def correct_frequency_response(
     # e.g. sensor_correction = {'Mirnov1': lambda f: 1/(1+1j*f/1000), 'Mirnov2': lambda f: 1/(1+1j*f/2000)}
     # also correct into Bdot by multiplying by 2*pi*f
 
-    for i, sensor_name in enumerate(sensors_bode["sensor"].values):
-        sensors_bode.loc[{"sensor": sensor_name}] *= sensor_freq_response[sensor_name](
-            np.array([freq])
-        )[0] * (2 * np.pi * freq)
+    for i, sensor_name in enumerate(sensors_bode["sensor_idx"].values):
+        sensors_bode.loc[{"sensor_idx": sensor_name}] *= sensor_freq_response[
+            sensor_name
+        ](np.array([freq]))[0] * (2 * np.pi * freq)
 
     if doSave:
         sensors_bode.to_netcdf(

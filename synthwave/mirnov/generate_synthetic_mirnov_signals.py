@@ -241,7 +241,9 @@ if __name__ == "__main__":
         return Z_C(w) / Z_total(w)  # Voltage across capacitor / input voltage
 
     # Frequency response dictionary for each sensor
-    freq_response_dict = {name: H for name in sensor_details.coords["sensor"].values}
+    freq_response_dict = {
+        name: H for name in sensor_details.coords["sensor_idx"].values
+    }
 
     ###################
     debug = True

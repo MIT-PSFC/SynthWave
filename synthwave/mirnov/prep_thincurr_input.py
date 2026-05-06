@@ -3,10 +3,10 @@
 
 import os
 from typing import Optional
-from loguru import logger
 
 import numpy as np
 import xarray as xr
+from loguru import logger
 from OpenFUSIONToolkit.ThinCurr.sensor import Mirnov, save_sensors
 
 
@@ -88,7 +88,10 @@ def gen_OFT_sensors_file(
         # sensor radius
         dx = sensor_details.radius.sel(sensor_idx=sensor_idx).item()
 
-        sensor_name = sensor_details.sensor_name.sel(sensor_idx=sensor_idx).item()
+        if "sensor_name" in sensor_details:
+            sensor_name = sensor_details.sensor_name.sel(sensor_idx=sensor_idx).item()
+        else:
+            sensor_name = str(sensor_idx)
 
         # create Mirnov object
         sensor_list.append(Mirnov(pt, norm, sensor_name, dx))
