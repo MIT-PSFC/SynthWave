@@ -43,7 +43,19 @@ def biot_savart_cylindrical(
 
 
 def detect_cocos(eqdsk: GEQDSKFile):
-    """Detect the COCOS of a given GEQDSK file"""
+    """Detect the COCOS of a given GEQDSK file
+    See `Sauter et al, 2013 <https://doi.org/10.1016/j.cpc.2012.09.010>`_.
+    Also https://crppwww.epfl.ch/~sauter/cocos/ and https://crppwww.epfl.ch/~sauter/cocos/Sauter_COORD_CONVENTIONS_COCOS_2012_updated_after_reprint_for_Appendices_and_refs.pdf
+
+    COCOS is defined by the following:
+    - e_Bp: 0 if psi in Wb/rad, 1 if psi in Weber
+    - sign_Bp: sign of poloidal magnetic field (Bp)
+    - sign_RphiZ: +1 if (R, phi, Z), -1 if (R, Z, phi)
+    - sign_rhotp: +1 if (rho, theta, phi), -1 if (rho, phi, theta)
+
+    Cannot rely on the sign of q because some codes only report abs(q)
+
+    """
     sign_Ip = np.sign(float(eqdsk.cpasma))
     sign_B0 = np.sign(float(eqdsk.bcentr))
     psi_increasing = float(np.sign(eqdsk.sibdry - eqdsk.simagx))
@@ -53,18 +65,14 @@ def detect_cocos(eqdsk: GEQDSKFile):
     # sigma_RphiZ = +1 (R,phi,Z, phi CCW): F = R*B_phi has same sign as B0.
     # sigma_RphiZ = -1 (R,Z,phi, phi CW): stored F has opposite sign to physical B0.
     # When bcentr=0 (not stored), assume standard sigma_RphiZ=+1 (gEQDSK default).
-    fpol_sign = int(np.sign(np.nanmean(eqdsk.fpol)))
+    sign_fpol = int(np.sign(np.nanmean(eqdsk.fpol)))
     if sign_B0 != 0:
-        sign_RphiZ = fpol_sign * int(sign_B0)
+        sign_RphiZ = sign_fpol * int(sign_B0)
     else:
         logger.warning(
             "bcentr=0, unable to determine sign_RphiZ from F. Assuming +1 (gEQDSK default)."
         )
         sign_RphiZ = 1
-
-    # From Table III: sigma_q = sigma_rhotp * sigma_Bp * sigma_RphiZ
-    sign_q = float(np.sign(np.nanmean(eqdsk.qpsi)))
-    sign_rhotp = int(sign_q * sign_Bp * sign_RphiZ)
 
     def _e_Bp(eqdsk):
         # Detect e_Bp via Grad-Shafranov residual.
@@ -112,6 +120,8 @@ def detect_cocos(eqdsk: GEQDSKFile):
         return e_Bp
 
     e_Bp = _e_Bp(eqdsk)
+
+    sign_rhotp = None
 
     # From Table I
     cocos_lookup = {
