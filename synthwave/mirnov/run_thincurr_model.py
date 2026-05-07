@@ -226,8 +226,8 @@ def calc_frequency_response(
         # sensor_details = sensor_obj["details"]  # Hack for now
 
         # Plot sensors
-        for sensor in sensor_details.sensor:
-            sensor_data = sensor_details.sel(sensor=sensor)
+        for sensor in sensor_details.sensor_idx:
+            sensor_data = sensor_details.sel(sensor_idx=sensor)
             sensor_point = sensor_data.position.data
             plotter.add_points(
                 sensor_point,
