@@ -8,7 +8,10 @@ import numpy as np
 import pytest
 
 from synthwave import PACKAGE_ROOT
-from synthwave.magnetic_geometry.equilibrium_field import EquilibriumField
+from synthwave.magnetic_geometry.equilibrium_field import (
+    EquilibriumField,
+    detect_cocos,
+)
 
 
 @pytest.fixture(scope="module")
@@ -126,3 +129,65 @@ class TestEquilibriumField:
                     eq_field.core_psi_consistency_check(
                         decreasing_q, psi_too_high, 100.0
                     )
+
+
+class TestCocos:
+    class TestDetectCocos:
+        def test_detect_cocos_cmod(self, eqdsk):
+            """C-Mod uses EFIT convention which is COCOS 1, 3, 5, or 7
+            Flux is always increasing and q is always positive
+            https://efit-ai.gitlab.io/efit/files.html
+            """
+
+            sign_Ip = np.sign(eqdsk.cpasma)
+            sign_B0 = np.sign(eqdsk.bcentr)
+
+            if sign_Ip > 0 and sign_B0 > 0:
+                expected_cocos = 1
+            elif sign_Ip < 0 and sign_B0 > 0:
+                expected_cocos = 3
+            elif sign_Ip > 0 and sign_B0 < 0:
+                expected_cocos = 5
+            elif sign_Ip < 0 and sign_B0 < 0:
+                expected_cocos = 7
+            else:
+                raise ValueError("Invalid signs for Ip and B0")
+
+            cocos = detect_cocos(eqdsk)
+            assert cocos == expected_cocos, (
+                f"Expected COCOS {expected_cocos} for C-Mod, got {cocos}"
+            )
+
+        def test_detect_cocos_d3d(self):
+            """DIII-D uses EFIT convention which is COCOS 3"""
+            eqdsk_file = os.path.join(
+                PACKAGE_ROOT,
+                "..",
+                "submodules",
+                "OpenFUSIONToolkit",
+                "examples",
+                "TokaMaker",
+                "DIIID",
+                "g192185.02440",
+            )
+            with open(eqdsk_file, "r") as f:
+                eqdsk = freeqdsk.geqdsk.read(f)
+
+            sign_Ip = np.sign(eqdsk.cpasma)
+            sign_B0 = np.sign(eqdsk.bcentr)
+
+            if sign_Ip > 0 and sign_B0 > 0:
+                expected_cocos = 1
+            elif sign_Ip < 0 and sign_B0 > 0:
+                expected_cocos = 3
+            elif sign_Ip > 0 and sign_B0 < 0:
+                expected_cocos = 5
+            elif sign_Ip < 0 and sign_B0 < 0:
+                expected_cocos = 7
+            else:
+                raise ValueError("Invalid signs for Ip and B0")
+
+            cocos = detect_cocos(eqdsk)
+            assert cocos == expected_cocos, (
+                f"Expected COCOS {expected_cocos} for DIII-D, got {cocos}"
+            )
