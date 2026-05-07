@@ -42,21 +42,26 @@ def biot_savart_cylindrical(
     return B_cylindrical
 
 
-def convert_cocos(eqdsk: GEQDSKFile, target_cocos: int):
-    """Convert a GEQDSKFile from freeqdsk to the target COCOS
-    See `Sauter et al, 2013 <https://doi.org/10.1016/j.cpc.2012.09.010>`_.
-    Also https://crppwww.epfl.ch/~sauter/cocos/ and https://crppwww.epfl.ch/~sauter/cocos/Sauter_COORD_CONVENTIONS_COCOS_2012_updated_after_reprint_for_Appendices_and_refs.pdf
+def detect_cocos(eqdsk: GEQDSKFile):
+    """Detect the COCOS of a given GEQDSK file"""
+    sign_Ip = np.sign(float(eqdsk.cpasma))
+    sign_B0 = np.sign(float(eqdsk.bcentr))
+    psi_increasing = float(np.sign(eqdsk.sibdry - eqdsk.simagx))
+    # From table III: sign(dpsi) = sign_Bp * sign_Ip
+    sign_Bp = int(psi_increasing * sign_Ip)
 
-    Args:
-        eqdsk: GEQDSKFile object from freeqdsk
-        target_cocos: COCOS to convert to (1-8, 11-18)
+    # sigma_RphiZ = +1 (R,phi,Z, phi CCW): F = R*B_phi has same sign as B0.
+    # sigma_RphiZ = -1 (R,Z,phi, phi CW): stored F has opposite sign to physical B0.
+    # When bcentr=0 (not stored), fall back to sign of fpol alone.
+    fpol_sign = int(np.sign(np.nanmean(eqdsk.fpol)))
+    if sign_B0 != 0:
+        sign_RphiZ = fpol_sign * int(sign_B0)
+    else:
+        sign_RphiZ = fpol_sign
 
-    Returns:
-        A new GEQDSKFile object with the specified COCOS
-    """
-
-    if target_cocos not in [1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 16, 17, 18]:
-        raise ValueError("Invalid target COCOS: %d" % target_cocos)
+    # From Table III: sigma_q = sigma_rhotp * sigma_Bp * sigma_RphiZ
+    sign_q = float(np.sign(np.nanmean(eqdsk.qpsi)))
+    sign_rhotp = int(sign_q * sign_Bp * sign_RphiZ)
 
     sign_Ip = np.sign(float(eqdsk.cpasma))
     sign_B0 = np.sign(float(eqdsk.bcentr))
@@ -150,17 +155,59 @@ def convert_cocos(eqdsk: GEQDSKFile, target_cocos: int):
             "Could not determine COCOS for the given GEQDSK. Please check the signs of Bp, RphiZ, and rhotp."
         )
 
-    if cocos_input == target_cocos:
-        logger.debug("No conversion needed, already in COCOS %d" % target_cocos)
+    return cocos_input
+
+
+def convert_cocos(
+    eqdsk: GEQDSKFile, cocos_target: int, cocos_input: int | None = None
+) -> GEQDSKFile:
+    """Convert a GEQDSKFile from freeqdsk to the target COCOS
+    See `Sauter et al, 2013 <https://doi.org/10.1016/j.cpc.2012.09.010>`_.
+    Also https://crppwww.epfl.ch/~sauter/cocos/ and https://crppwww.epfl.ch/~sauter/cocos/Sauter_COORD_CONVENTIONS_COCOS_2012_updated_after_reprint_for_Appendices_and_refs.pdf
+
+    Args:
+        eqdsk: GEQDSKFile object from freeqdsk
+        cocos_target: COCOS to convert to (1-8, 11-18)
+        cocos_input: COCOS of the input GEQDSKFile (if None, it will be determined automatically)
+
+    Returns:
+        A new GEQDSKFile object with the specified COCOS
+    """
+
+    if cocos_target not in [1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 16, 17, 18]:
+        raise ValueError("Invalid target COCOS: %d" % cocos_target)
+
+    if cocos_input is None:
+        cocos_input = detect_cocos(eqdsk)
+
+    if cocos_input == cocos_target:
+        logger.debug("No conversion needed, already in COCOS %d" % cocos_target)
     else:
         logger.debug(
-            "Converting from COCOS %d to COCOS %d" % (cocos_input, target_cocos)
+            "Converting from COCOS %d to COCOS %d" % (cocos_input, cocos_target)
         )
 
-    # Inverse lookup: COCOS number -> (e_Bp, sigma_Bp, sigma_RphiZ, sigma_rhotp)
-    cocos_params = {v: k for k, v in cocos_lookup.items()}
+    # COCOS number -> (e_Bp, sigma_Bp, sigma_RphiZ, sigma_rhotp)
+    cocos_params = {
+        1: (0, +1, +1, +1),
+        11: (1, +1, +1, +1),
+        2: (0, +1, -1, +1),
+        12: (1, +1, -1, +1),
+        3: (0, -1, +1, -1),
+        13: (1, -1, +1, -1),
+        4: (0, -1, -1, -1),
+        14: (1, -1, -1, -1),
+        5: (0, +1, +1, -1),
+        15: (1, +1, +1, -1),
+        6: (0, +1, -1, -1),
+        16: (1, +1, -1, -1),
+        7: (0, -1, +1, +1),
+        17: (1, -1, +1, +1),
+        8: (0, -1, -1, +1),
+        18: (1, -1, -1, +1),
+    }
     e_Bp_i, sigma_Bp_i, sigma_RphiZ_i, sigma_rhotp_i = cocos_params[cocos_input]
-    e_Bp_o, sigma_Bp_o, sigma_RphiZ_o, sigma_rhotp_o = cocos_params[target_cocos]
+    e_Bp_o, sigma_Bp_o, sigma_RphiZ_o, sigma_rhotp_o = cocos_params[cocos_target]
 
     # Conversion factors from Sauter 2013, Table III
     psi_factor = (sigma_Bp_o / sigma_Bp_i) * (2 * np.pi) ** (e_Bp_o - e_Bp_i)
