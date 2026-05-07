@@ -1,9 +1,9 @@
 import numpy as np
+from freeqdsk.geqdsk import GEQDSKFile
+from loguru import logger
 from scipy.constants import mu_0
 from scipy.interpolate import RectBivariateSpline, make_smoothing_spline
 from scipy.optimize import newton
-from freeqdsk.geqdsk import GEQDSKFile
-from loguru import logger
 
 from synthwave.magnetic_geometry.utils import (
     cartesian_to_cylindrical,
@@ -52,31 +52,15 @@ def detect_cocos(eqdsk: GEQDSKFile):
 
     # sigma_RphiZ = +1 (R,phi,Z, phi CCW): F = R*B_phi has same sign as B0.
     # sigma_RphiZ = -1 (R,Z,phi, phi CW): stored F has opposite sign to physical B0.
-    # When bcentr=0 (not stored), fall back to sign of fpol alone.
+    # When bcentr=0 (not stored), assume standard sigma_RphiZ=+1 (gEQDSK default).
     fpol_sign = int(np.sign(np.nanmean(eqdsk.fpol)))
     if sign_B0 != 0:
         sign_RphiZ = fpol_sign * int(sign_B0)
     else:
-        sign_RphiZ = fpol_sign
-
-    # From Table III: sigma_q = sigma_rhotp * sigma_Bp * sigma_RphiZ
-    sign_q = float(np.sign(np.nanmean(eqdsk.qpsi)))
-    sign_rhotp = int(sign_q * sign_Bp * sign_RphiZ)
-
-    sign_Ip = np.sign(float(eqdsk.cpasma))
-    sign_B0 = np.sign(float(eqdsk.bcentr))
-    psi_increasing = float(np.sign(eqdsk.sibdry - eqdsk.simagx))
-    # From table III: sign(dpsi) = sign_Bp * sign_Ip
-    sign_Bp = int(psi_increasing * sign_Ip)
-
-    # sigma_RphiZ = +1 (R,phi,Z, phi CCW): F = R*B_phi has same sign as B0.
-    # sigma_RphiZ = -1 (R,Z,phi, phi CW): stored F has opposite sign to physical B0.
-    # When bcentr=0 (not stored), fall back to sign of fpol alone.
-    fpol_sign = int(np.sign(np.nanmean(eqdsk.fpol)))
-    if sign_B0 != 0:
-        sign_RphiZ = fpol_sign * int(sign_B0)
-    else:
-        sign_RphiZ = fpol_sign
+        logger.warning(
+            "bcentr=0, unable to determine sign_RphiZ from F. Assuming +1 (gEQDSK default)."
+        )
+        sign_RphiZ = 1
 
     # From Table III: sigma_q = sigma_rhotp * sigma_Bp * sigma_RphiZ
     sign_q = float(np.sign(np.nanmean(eqdsk.qpsi)))

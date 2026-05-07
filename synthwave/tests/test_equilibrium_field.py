@@ -4,6 +4,7 @@ import os
 import unittest.mock as mock
 
 import freeqdsk
+import netCDF4  # noqa: F401 - must precede any OpenFUSIONToolkit import to avoid HDF5 conflict
 import numpy as np
 import pytest
 
@@ -134,24 +135,24 @@ class TestEquilibriumField:
 class TestCocos:
     class TestDetectCocos:
         def test_detect_cocos_cmod(self, eqdsk):
-            """C-Mod uses EFIT convention which is COCOS 1, 3, 5, or 7
-            Flux is always increasing and q is always positive
+            """C-Mod uses EFIT convention (sigma_RphiZ=+1, e_Bp=0, psi increasing).
+            COCOS depends on sign(Ip) and sign(B0)
             https://efit-ai.gitlab.io/efit/files.html
             """
 
             sign_Ip = np.sign(eqdsk.cpasma)
-            sign_B0 = np.sign(eqdsk.bcentr)
+            sign_B0 = np.sign(float(eqdsk.bcentr))
 
-            if sign_Ip > 0 and sign_B0 > 0:
+            if sign_Ip > 0 and sign_B0 >= 0:
                 expected_cocos = 1
-            elif sign_Ip < 0 and sign_B0 > 0:
+            elif sign_Ip < 0 and sign_B0 >= 0:
                 expected_cocos = 3
             elif sign_Ip > 0 and sign_B0 < 0:
                 expected_cocos = 5
             elif sign_Ip < 0 and sign_B0 < 0:
                 expected_cocos = 7
             else:
-                raise ValueError("Invalid signs for Ip and B0")
+                raise ValueError("Invalid signs for Ip and q")
 
             cocos = detect_cocos(eqdsk)
             assert cocos == expected_cocos, (
@@ -159,7 +160,9 @@ class TestCocos:
             )
 
         def test_detect_cocos_d3d(self):
-            """DIII-D uses EFIT convention which is COCOS 3"""
+            """DIII-D uses EFIT convention (sigma_RphiZ=+1, e_Bp=0, psi increasing).
+            COCOS depends on sign(Ip) and sign(B0)
+            """
             eqdsk_file = os.path.join(
                 PACKAGE_ROOT,
                 "..",
@@ -174,18 +177,18 @@ class TestCocos:
                 eqdsk = freeqdsk.geqdsk.read(f)
 
             sign_Ip = np.sign(eqdsk.cpasma)
-            sign_B0 = np.sign(eqdsk.bcentr)
+            sign_B0 = np.sign(float(eqdsk.bcentr))
 
-            if sign_Ip > 0 and sign_B0 > 0:
+            if sign_Ip > 0 and sign_B0 >= 0:
                 expected_cocos = 1
-            elif sign_Ip < 0 and sign_B0 > 0:
+            elif sign_Ip < 0 and sign_B0 >= 0:
                 expected_cocos = 3
             elif sign_Ip > 0 and sign_B0 < 0:
                 expected_cocos = 5
             elif sign_Ip < 0 and sign_B0 < 0:
                 expected_cocos = 7
             else:
-                raise ValueError("Invalid signs for Ip and B0")
+                raise ValueError("Invalid signs for Ip and q")
 
             cocos = detect_cocos(eqdsk)
             assert cocos == expected_cocos, (
