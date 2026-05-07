@@ -53,8 +53,11 @@ def detect_cocos(eqdsk: GEQDSKFile):
     - sign_RphiZ: +1 if (R, phi, Z), -1 if (R, Z, phi)
     - sign_rhotp: +1 if (rho, theta, phi), -1 if (rho, phi, theta)
 
-    Cannot rely on the sign of q because some codes only report abs(q)
-
+    sign_rhotp is derived from sign(Ip * B0) (discharge helicity) rather than sign(q),
+    because some codes store abs(q). From Sauter Table I: sign(q) = sign_Bp * sign_RphiZ * sign_rhotp.
+    For sign_RphiZ=+1 codes, sign(B0) = sign(q_physical), making this equivalent to the
+    Sauter criterion. For sign_RphiZ=-1 codes, sign(B0) gives consistent results when B0
+    has its physical sign.
     """
     sign_Ip = np.sign(float(eqdsk.cpasma))
     sign_B0 = np.sign(float(eqdsk.bcentr))
@@ -62,9 +65,9 @@ def detect_cocos(eqdsk: GEQDSKFile):
     # From table III: sign(dpsi) = sign_Bp * sign_Ip
     sign_Bp = int(psi_increasing * sign_Ip)
 
-    # sigma_RphiZ = +1 (R,phi,Z, phi CCW): F = R*B_phi has same sign as B0.
-    # sigma_RphiZ = -1 (R,Z,phi, phi CW): stored F has opposite sign to physical B0.
-    # When bcentr=0 (not stored), assume standard sigma_RphiZ=+1 (gEQDSK default).
+    # sign_RphiZ = +1 (R,phi,Z, phi CCW): F = R*B_phi has same sign as B0.
+    # sign_RphiZ = -1 (R,Z,phi, phi CW): stored F has opposite sign to physical B0.
+    # When bcentr=0 (not stored), assume standard sign_RphiZ=+1 (gEQDSK default).
     sign_fpol = int(np.sign(np.nanmean(eqdsk.fpol)))
     if sign_B0 != 0:
         sign_RphiZ = sign_fpol * int(sign_B0)
@@ -121,7 +124,13 @@ def detect_cocos(eqdsk: GEQDSKFile):
 
     e_Bp = _e_Bp(eqdsk)
 
-    sign_rhotp = None
+    # sign_rhotp is the discharge helicity: sign(Ip * B0).
+    # Using sign(q) is unreliable because some codes store abs(q).
+    # When bcentr=0 (not stored), assume B0 > 0 (standard gEQDSK default).
+    if sign_B0 != 0:
+        sign_rhotp = sign_Bp * int(sign_B0)
+    else:
+        sign_rhotp = sign_Bp
 
     # From Table I
     cocos_lookup = {
@@ -181,7 +190,7 @@ def convert_cocos(
             "Converting from COCOS %d to COCOS %d" % (cocos_input, cocos_target)
         )
 
-    # COCOS number -> (e_Bp, sigma_Bp, sigma_RphiZ, sigma_rhotp)
+    # COCOS number -> (e_Bp, sign_Bp, sign_RphiZ, sign_rhotp)
     cocos_params = {
         1: (0, +1, +1, +1),
         11: (1, +1, +1, +1),
@@ -200,14 +209,14 @@ def convert_cocos(
         8: (0, -1, -1, +1),
         18: (1, -1, -1, +1),
     }
-    e_Bp_i, sigma_Bp_i, sigma_RphiZ_i, sigma_rhotp_i = cocos_params[cocos_input]
-    e_Bp_o, sigma_Bp_o, sigma_RphiZ_o, sigma_rhotp_o = cocos_params[cocos_target]
+    e_Bp_i, sign_Bp_i, sign_RphiZ_i, sign_rhotp_i = cocos_params[cocos_input]
+    e_Bp_o, sign_Bp_o, sign_RphiZ_o, sign_rhotp_o = cocos_params[cocos_target]
 
     # Conversion factors from Sauter 2013, Table III
-    psi_factor = (sigma_Bp_o / sigma_Bp_i) * (2 * np.pi) ** (e_Bp_o - e_Bp_i)
-    F_factor = sigma_RphiZ_o / sigma_RphiZ_i
-    q_factor = (sigma_rhotp_o * sigma_Bp_o * sigma_RphiZ_o) / (
-        sigma_rhotp_i * sigma_Bp_i * sigma_RphiZ_i
+    psi_factor = (sign_Bp_o / sign_Bp_i) * (2 * np.pi) ** (e_Bp_o - e_Bp_i)
+    F_factor = sign_RphiZ_o / sign_RphiZ_i
+    q_factor = (sign_rhotp_o * sign_Bp_o * sign_RphiZ_o) / (
+        sign_rhotp_i * sign_Bp_i * sign_RphiZ_i
     )
     # pprime = dp/dpsi; ffprime = F*dF/dpsi -> both scale as 1/psi_factor
     # (F_factor^2 = 1 always, so the F sign cancels in ffprime)
