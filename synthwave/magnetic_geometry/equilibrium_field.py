@@ -126,13 +126,19 @@ def detect_cocos(eqdsk: GEQDSKFile):
 
     # sign_rhotp is the discharge helicity: sign(Ip * B0).
     # Using sign(q) is unreliable because some codes store abs(q).
-    # When bcentr=0 (not stored), assume B0 > 0 (standard gEQDSK default).
+    # When bcentr=0, infer sign_B0 from fpol under the standard sign_RphiZ=+1 assumption:
+    # F = R*B_phi, so sign_fpol = sign_RphiZ * sign_B0 = sign_B0 when sign_RphiZ=+1.
     if sign_B0 != 0:
-        sign_rhotp = sign_Bp * int(sign_B0)
+        sign_B0_eff = int(sign_B0)
     else:
-        sign_rhotp = sign_Bp
+        sign_B0_eff = int(sign_fpol)
+        logger.warning(
+            "bcentr=0, unable to determine sign_B0. Inferring sign_B0=%d from F under the standard sign_RphiZ=+1 assumption."
+        )
+    sign_rhotp = int(sign_Ip) * sign_B0_eff
 
     # From Table I
+    # (e_Bp, sign_Bp, sign_RphiZ, sign_rhotp) -> COCOS number
     cocos_lookup = {
         (0, +1, +1, +1): 1,
         (1, +1, +1, +1): 11,

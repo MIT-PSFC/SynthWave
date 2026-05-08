@@ -229,10 +229,13 @@ class TestCocos:
 
             sign_Ip = np.sign(eqdsk_cmod.cpasma)
             sign_B0 = np.sign(float(eqdsk_cmod.bcentr))
+            if sign_B0 == 0:
+                # When bcentr=0, infer sign_B0 from fpol (assuming sign_RphiZ=+1).
+                sign_B0 = np.sign(np.nanmean(eqdsk_cmod.fpol))
 
-            if sign_Ip > 0 and sign_B0 >= 0:
+            if sign_Ip > 0 and sign_B0 > 0:
                 expected_cocos = 1
-            elif sign_Ip < 0 and sign_B0 >= 0:
+            elif sign_Ip < 0 and sign_B0 > 0:
                 expected_cocos = 3
             elif sign_Ip > 0 and sign_B0 < 0:
                 expected_cocos = 5
@@ -254,10 +257,13 @@ class TestCocos:
 
             sign_Ip = np.sign(eqdsk_d3d.cpasma)
             sign_B0 = np.sign(float(eqdsk_d3d.bcentr))
+            if sign_B0 == 0:
+                # When bcentr=0, infer sign_B0 from fpol (assuming sign_RphiZ=+1).
+                sign_B0 = np.sign(np.nanmean(eqdsk_d3d.fpol))
 
-            if sign_Ip > 0 and sign_B0 >= 0:
+            if sign_Ip > 0 and sign_B0 > 0:
                 expected_cocos = 1
-            elif sign_Ip < 0 and sign_B0 >= 0:
+            elif sign_Ip < 0 and sign_B0 > 0:
                 expected_cocos = 3
             elif sign_Ip > 0 and sign_B0 < 0:
                 expected_cocos = 5
@@ -364,7 +370,60 @@ class TestCocos:
                 f"Expected converted COCOS to be {cocos_target}, got {detected_cocos}"
             )
 
-            # Ensure psi_ref is increasing with minor radius
-            assert eqdsk_cocos1.sibdry > eqdsk_cocos1.simagx, (
-                f"Expected psi to increase from axis to boundary in COCOS {cocos_target}"
+            # In COCOS 1 (sign_Bp=+1), sign(dpsi/drho) = sign(Ip) per Sauter Table III.
+            # Psi increases from axis to boundary iff Ip > 0.
+            sign_Ip = float(eqdsk_cocos1.cpasma)
+            assert (
+                float(eqdsk_cocos1.sibdry) - float(eqdsk_cocos1.simagx)
+            ) * sign_Ip > 0, (
+                f"Expected sign(sibdry - simagx) == sign(Ip) in COCOS {cocos_target}"
+            )
+
+        @pytest.mark.parametrize(
+            "eqdsk",
+            [
+                "eqdsk_cmod",
+                "eqdsk_d3d",
+                pytest.param(
+                    "eqdsk_tcv",
+                    marks=pytest.mark.skipif(
+                        condition=not os.path.exists(
+                            "/usr/local/mfe/ml_data_dump/TMDB/scratch/82878_tars_input.nc"
+                        ),
+                        reason="Test requires TCV data which is not open source",
+                    ),
+                ),
+            ],
+            indirect=True,
+        )
+        def test_convert_cocos_same_through_internal(self, eqdsk):
+            """Test that converting to COCOS 1 (used internally) and back to the original
+            creates an identical equilibrium"""
+            cocos_input = detect_cocos(eqdsk)
+            cocos_target = 1  # COCOS 1 is the convention used internally by SynthWave
+            eqdsk_cocos1 = convert_cocos(
+                eqdsk, cocos_target=cocos_target, cocos_input=cocos_input
+            )
+            eqdsk_converted_back = convert_cocos(
+                eqdsk_cocos1, cocos_target=cocos_input, cocos_input=cocos_target
+            )
+
+            # Check that the converted_back eqdsk matches the original eqdsk
+            assert np.isclose(eqdsk_converted_back.simagx, eqdsk.simagx), (
+                "simagx should be unchanged after round-trip conversion"
+            )
+            assert np.isclose(eqdsk_converted_back.sibdry, eqdsk.sibdry), (
+                "sibdry should be unchanged after round-trip conversion"
+            )
+            assert np.allclose(eqdsk_converted_back.psi, eqdsk.psi), (
+                "psi array should be unchanged after round-trip conversion"
+            )
+            assert np.allclose(eqdsk_converted_back.fpol, eqdsk.fpol), (
+                "fpol array should be unchanged after round-trip conversion"
+            )
+            assert np.allclose(eqdsk_converted_back.ffprime, eqdsk.ffprime), (
+                "ffprime array should be unchanged after round-trip conversion"
+            )
+            assert np.allclose(eqdsk_converted_back.pprime, eqdsk.pprime), (
+                "pprime array should be unchanged after round-trip conversion"
             )
