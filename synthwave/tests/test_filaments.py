@@ -1,3 +1,4 @@
+import copy
 import os
 from fractions import Fraction
 
@@ -926,7 +927,7 @@ class TestEquilibriumFilamentTracer:
     @pytest.mark.parametrize("current_sign", [("positive", 1), ("negative", -1)])
     def test_trace_satisfies_cocos(self, cmod_eqdsk, mode, helicity, current_sign):
         """Test basic tracing functionality."""
-        eqdsk = cmod_eqdsk
+        eqdsk = copy.deepcopy(cmod_eqdsk)
         if current_sign[0] == "positive":
             # C-Mod equilibrium with COCOS 1 has negative current, so flip sign to get positive current case
             eqdsk.cpasma = -eqdsk.cpasma
@@ -1152,9 +1153,6 @@ class TestNegativeMFilament:
             atol=1e-10,
         )
 
-    @pytest.mark.xfail(
-        reason="Helicity sign is presently not treated well, will fix in COCOS PR"
-    )
     def test_helicity_sign_mirrors_z_coordinates(self, cmod_eqdsk):
         """EquilibriumFilamentTracer with helicity_sign=+1 vs -1 must produce Z-mirrored traces."""
         eq_field = EquilibriumField(cmod_eqdsk)
@@ -1185,7 +1183,8 @@ class TestNegativeMFilament:
         # Z displacement about the magnetic axis should be negated between the two tracers.
         # Tolerance is loose because the equilibrium is not perfectly up-down symmetric,
         # so a_pos(eta) != a_neg(eta) and the mirror is approximate.
-        # Similarly, R is not necessarily equal for a non-up-down-symmetric equilibrium.
+        # Similarly, R is not necessarily equal for a non-up-down-symmetric equilibrium,
+        # because the dphi/deta may differ based on the exact path taken
         zmagx = eq_field.eqdsk.zmagx
         np.testing.assert_allclose(
             pts_pos[:, 2] - zmagx,
