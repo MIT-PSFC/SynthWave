@@ -274,14 +274,33 @@ class EquilibriumField:
         # https://freeqdsk.readthedocs.io/en/stable/geqdsk.html
         self.psi_grid = np.linspace(eqdsk.simagx, eqdsk.sibdry, eqdsk.nx)
 
-        # Switching to smoothing spline to avoid strange "discretization" jumps
-        # Note: lam value (lower = less smoothing) should be reasonably consistent across q
-        # profiles, but this is not certain. Lam=1e-7 works for q(psi) and F(psi) so far.
+        def _smooth_qpsi_F(eqdsk, psi_grid, lam):
+            # Switching to smoothing spline to avoid strange "discretization" jumps
+            # Note: lam value (lower = less smoothing) should be reasonably consistent across q
+            # profiles, but this is not certain. Lam=1e-7 works for q(psi) and F(psi) so far.
 
-        # q(psi)
-        self.qpsi = make_smoothing_spline(self.psi_grid, eqdsk.qpsi, lam=lam, axis=0)
-        # F(psi)
-        self.F = make_smoothing_spline(self.psi_grid, eqdsk.fpol, lam=lam, axis=0)
+            # If Ip < 0, psi decreases from axis to boundary, so reverse when making smoothing spline
+            # Result should be identical, it's just that the make_smoothing_spline method expects monotonically increasing x values
+            sign_Ip = np.sign(float(eqdsk.cpasma))
+
+            if sign_Ip < 0:
+                psi_grid = psi_grid[
+                    ::-1
+                ]  # reverse psi grid for negative Ip to ensure monotonicity of q(psi)
+                qpsi = eqdsk.qpsi[::-1]  # reverse q(psi) correspondingly
+                fpol = eqdsk.fpol[::-1]  # reverse fpol correspondingly
+            else:
+                qpsi = eqdsk.qpsi
+                fpol = eqdsk.fpol
+
+            # q(psi)
+            qpsi_spline = make_smoothing_spline(psi_grid, qpsi, lam=lam, axis=0)
+            # F(psi)
+            F_spline = make_smoothing_spline(psi_grid, fpol, lam=lam, axis=0)
+
+            return qpsi_spline, F_spline
+
+        self.qpsi, self.F = _smooth_qpsi_F(eqdsk, self.psi_grid, lam)
 
     def get_field_at_point(self, R, Z) -> np.ndarray:
         # Bp = Br + Bz = (d(psi)/dZ - d(psi)/dR) / R
@@ -318,37 +337,70 @@ class EquilibriumField:
         Check to see if the value we want plausibly exists in the final set of q values from the eqdsk
         The issue appears to be that although psi is continuous and monotonic,
         q values can be "grouped" in an odd, stepwise fashion
-
-        Note that this treats
         """
-        # For COCOS 1, psi is positive-monotonic: index 0 at axis (low psi), index -1 at LCFS (high psi)
-        # Also using |q| instead of signed q to avoid issues with sign flips.
-        qpsi_grid = np.abs(qpsi_grid)
+        is_increasing = (self.psi_grid[1] - self.psi_grid[0]) > 0
 
-        # If psi is in range, return it unchanged
-        if (psi >= self.psi_grid[0]) and (psi <= self.psi_grid[-1]):
-            return psi
+        if is_increasing:
+            # positive-monotonic: index 0 at axis (low psi), index -1 at LCFS (high psi)
 
-        # If psi is too large, already lost
-        if psi > self.psi_grid[-1]:
+            # If psi is in range, return it unchanged
+            if (psi >= self.psi_grid[0]) and (psi <= self.psi_grid[-1]):
+                return psi
+
+            # If psi is too large, already lost
+            if psi > self.psi_grid[-1]:
+                raise ValueError(
+                    "Error: requested q=%1.3f is outside the gEQDSK range (q_max = %1.3f) and was unable to be fixed"
+                    % (q, qpsi_grid[-1])
+                )
+
+            # If psi is too small, try to fix
+            if psi < self.psi_grid[0]:
+                if (
+                    np.argwhere(qpsi_grid > (qpsi_grid[0] + 1e-3)).squeeze()[0] > 1
+                ):  # multiple almost-identical q values in a row
+                    lin_interp_q = np.polyfit(self.psi_grid[:30], qpsi_grid[:30], 1)
+                    psi_fixed = self.psi_grid[
+                        np.argmin(
+                            np.abs(np.polyval(lin_interp_q, self.psi_grid[:30]) - q)
+                        )
+                    ]
+                    if psi_fixed >= self.psi_grid[0]:
+                        return psi_fixed
+
             raise ValueError(
-                "Error: requested q=%1.3f is outside the gEQDSK range (q_max = %1.3f) and was unable to be fixed"
+                "Error: requested q=%1.3f is outside the gEQDSK range (q_min = %1.3f) and was unable to be fixed"
+                % (q, qpsi_grid[0])
+            )
+        else:
+            # negative-monotonic: index 0 at LCFS (high psi), index -1 at axis (low psi)
+
+            # If psi is in range, return it unchanged
+            if (psi >= self.psi_grid[-1]) and (psi <= self.psi_grid[0]):
+                return psi
+
+            # If psi is too large, already lost
+            if psi > self.psi_grid[0]:
+                raise ValueError(
+                    "Error: requested q=%1.3f is outside the gEQDSK range (q_max = %1.3f) and was unable to be fixed"
+                    % (q, qpsi_grid[0])
+                )
+
+            # If psi is too small, try to fix
+            if psi < self.psi_grid[-1]:
+                if (
+                    np.argwhere(qpsi_grid < (qpsi_grid[-1] + 1e-3)).squeeze()[-1] > 1
+                ):  # multiple identical q values in a row
+                    lin_interp_q = np.polyfit(self.psi_grid[-30:], qpsi_grid[-30:], 1)
+                    psi_fixed = self.psi_grid[
+                        np.argmin(
+                            np.abs(np.polyval(lin_interp_q, self.psi_grid[-30:]) - q)
+                        )
+                    ]
+                    if psi_fixed >= self.psi_grid[-1]:
+                        return psi_fixed
+
+            raise ValueError(
+                "Error: requested q=%1.3f is outside the gEQDSK range (q_min = %1.3f) and was unable to be fixed"
                 % (q, qpsi_grid[-1])
             )
-
-        # If psi is too small, try to fix
-        if psi < self.psi_grid[0]:
-            if (
-                np.argwhere(qpsi_grid > (qpsi_grid[0] + 1e-3)).squeeze()[0] > 1
-            ):  # multiple almost-identical q values in a row
-                lin_interp_q = np.polyfit(self.psi_grid[:30], qpsi_grid[:30], 1)
-                psi_fixed = self.psi_grid[
-                    np.argmin(np.abs(np.polyval(lin_interp_q, self.psi_grid[:30]) - q))
-                ]
-                if psi_fixed >= self.psi_grid[0]:
-                    return psi_fixed
-
-        raise ValueError(
-            "Error: requested q=%1.3f is outside the gEQDSK range (q_min = %1.3f) and was unable to be fixed"
-            % (q, qpsi_grid[0])
-        )
