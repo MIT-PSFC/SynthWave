@@ -372,11 +372,24 @@ class TestCocos:
 
             # In COCOS 1 (sign_Bp=+1), sign(dpsi/drho) = sign(Ip) per Sauter Table III.
             # Psi increases from axis to boundary iff Ip > 0.
-            sign_Ip = float(eqdsk_cocos1.cpasma)
+            sign_Ip = np.sign(eqdsk_cocos1.cpasma)
             assert (
                 float(eqdsk_cocos1.sibdry) - float(eqdsk_cocos1.simagx)
             ) * sign_Ip > 0, (
                 f"Expected sign(sibdry - simagx) == sign(Ip) in COCOS {cocos_target}"
+            )
+
+            sign_B0 = np.sign(float(eqdsk_cocos1.bcentr))
+            if sign_B0 == 0:
+                # When bcentr=0, infer sign_B0 from fpol (assuming sign_RphiZ=+1).
+                sign_B0 = np.sign(np.nanmean(eqdsk_cocos1.fpol))
+
+            sign_q_expected = int(
+                sign_B0 * sign_Ip
+            )  # q > 0 when B0 and Ip have the same sign
+            sign_q_actual = np.sign(eqdsk_cocos1.qpsi[-1])  # check q at LCFS
+            assert sign_q_actual == sign_q_expected, (
+                f"Expected sign(q)={sign_q_expected} based on signs of B0 and Ip, got sign(q)={sign_q_actual}"
             )
 
         @pytest.mark.parametrize(

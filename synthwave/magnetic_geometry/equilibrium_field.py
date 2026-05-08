@@ -221,15 +221,10 @@ def convert_cocos(
     # Conversion factors from Sauter 2013, Table III
     psi_factor = (sign_Bp_o / sign_Bp_i) * (2 * np.pi) ** (e_Bp_o - e_Bp_i)
     F_factor = sign_RphiZ_o / sign_RphiZ_i
-    q_factor = (sign_rhotp_o * sign_Bp_o * sign_RphiZ_o) / (
-        sign_rhotp_i * sign_Bp_i * sign_RphiZ_i
-    )
     # pprime = dp/dpsi; ffprime = F*dF/dpsi -> both scale as 1/psi_factor
     # (F_factor^2 = 1 always, so the F sign cancels in ffprime)
-
-    simagx = float(eqdsk.simagx) * psi_factor
-    sibdry = float(eqdsk.sibdry) * psi_factor
-    psi = np.array(eqdsk.psi, dtype=float) * psi_factor
+    # Some codes store abs(q), so just make sure the sign is consistent with the target
+    qpsi = np.abs(np.array(eqdsk.qpsi, dtype=float)) * sign_rhotp_o
 
     new_eqdsk = GEQDSKFile(
         # Unchanged
@@ -254,13 +249,13 @@ def convert_cocos(
         rlim=eqdsk.rlim,
         zlim=eqdsk.zlim,
         # COCOS-dependent
-        simagx=simagx,
-        sibdry=sibdry,
-        psi=psi,
+        simagx=float(eqdsk.simagx) * psi_factor,
+        sibdry=float(eqdsk.sibdry) * psi_factor,
+        psi=np.array(eqdsk.psi, dtype=float) * psi_factor,
         fpol=np.array(eqdsk.fpol, dtype=float) * F_factor,
         ffprime=np.array(eqdsk.ffprime, dtype=float) / psi_factor,
         pprime=np.array(eqdsk.pprime, dtype=float) / psi_factor,
-        qpsi=np.array(eqdsk.qpsi, dtype=float) * q_factor,
+        qpsi=qpsi,
     )
 
     return new_eqdsk
