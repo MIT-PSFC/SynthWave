@@ -11,6 +11,7 @@ import pytest
 from synthwave import PACKAGE_ROOT
 from synthwave.magnetic_geometry.equilibrium_field import (
     EquilibriumField,
+    convert_cocos,
     detect_cocos,
 )
 
@@ -133,15 +134,101 @@ class TestEquilibriumField:
 
 
 class TestCocos:
+    @pytest.fixture(scope="class")
+    def eqdsk_cmod(self):
+        """Get the C-Mod eqdsk"""
+        eqdsk_file = os.path.join(
+            PACKAGE_ROOT, "input_data", "cmod", "g1051202011.1000"
+        )
+        with open(eqdsk_file, "r") as f:
+            return freeqdsk.geqdsk.read(f)
+
+    @pytest.fixture(scope="class")
+    def eqdsk_d3d(self):
+        eqdsk_file = os.path.join(
+            PACKAGE_ROOT,
+            "..",
+            "submodules",
+            "OpenFUSIONToolkit",
+            "examples",
+            "TokaMaker",
+            "DIIID",
+            "g192185.02440",
+        )
+        with open(eqdsk_file, "r") as f:
+            eqdsk = freeqdsk.geqdsk.read(f)
+
+        return eqdsk
+
+    @pytest.fixture(scope="class")
+    def eqdsk_tcv(self):
+        import xarray as xr
+        from scipy.interpolate import interp1d
+
+        fname = "/usr/local/mfe/ml_data_dump/TMDB/scratch/82878_tars_input.nc"
+        tidx = 1100
+
+        ds = xr.open_dataset(fname)
+        ds_eq = ds.sel(time_idx=tidx).isel(frequency_idx=0)
+
+        nx = len(ds_eq["rgrid"])
+        ny = len(ds_eq["zgrid"])
+
+        def _resample_to_nx(arr: np.ndarray) -> np.ndarray:
+            arr = np.array(arr, dtype=float)
+            valid = np.isfinite(arr)
+            if not np.any(valid):
+                return np.zeros(nx)
+            if not np.all(valid):
+                xs = np.arange(len(arr))
+                arr = np.interp(xs, xs[valid], arr[valid])
+            if len(arr) == nx:
+                return arr
+            psi_old = np.linspace(0, 1, len(arr))
+            psi_new = np.linspace(0, 1, nx)
+            return interp1d(psi_old, arr, kind="linear")(psi_new)
+
+        eqdsk = freeqdsk.geqdsk.GEQDSKFile(
+            comment="TCV LIUQE",
+            shot=82878,
+            nx=nx,
+            ny=ny,
+            rdim=float(ds_eq["rgrid"][-1] - ds_eq["rgrid"][0]),
+            zdim=float(ds_eq["zgrid"][-1] - ds_eq["zgrid"][0]),
+            rcentr=float(ds_eq["rgrid"][nx // 2]),
+            rleft=float(ds_eq["rgrid"][0]),
+            zmid=float(ds_eq["zgrid"][ny // 2]),
+            rmagx=float(ds_eq["rmaxis"]),
+            zmagx=float(ds_eq["zmaxis"]),
+            simagx=float(ds_eq["ssimag"]),
+            sibdry=float(ds_eq["ssibry"]),
+            bcentr=float(ds_eq["bcentr"]),
+            cpasma=float(ds_eq["cpasma"]),
+            fpol=_resample_to_nx(ds_eq["fpol"].values),
+            pres=_resample_to_nx(ds_eq["pres"].values),
+            ffprime=_resample_to_nx(ds_eq["ffprim"].values),
+            pprime=_resample_to_nx(ds_eq["pprime"].values),
+            psi=ds_eq["psirz"].values,
+            qpsi=_resample_to_nx(ds_eq["qpsi"].values),
+            nbdry=len(ds_eq["rbbbs"]),
+            nlim=0,
+            rbdry=ds_eq["rbbbs"].values,
+            zbdry=ds_eq["zbbbs"].values,
+            rlim=[],
+            zlim=[],
+        )
+
+        return eqdsk
+
     class TestDetectCocos:
-        def test_detect_cocos_cmod(self, eqdsk):
+        def test_detect_cocos_cmod(self, eqdsk_cmod):
             """C-Mod uses EFIT convention (sigma_RphiZ=+1, e_Bp=0, psi increasing).
             COCOS depends on sign(Ip) and sign(B0)
             https://efit-ai.gitlab.io/efit/files.html
             """
 
-            sign_Ip = np.sign(eqdsk.cpasma)
-            sign_B0 = np.sign(float(eqdsk.bcentr))
+            sign_Ip = np.sign(eqdsk_cmod.cpasma)
+            sign_B0 = np.sign(float(eqdsk_cmod.bcentr))
 
             if sign_Ip > 0 and sign_B0 >= 0:
                 expected_cocos = 1
@@ -154,30 +241,19 @@ class TestCocos:
             else:
                 raise ValueError("Invalid signs for Ip and q")
 
-            cocos = detect_cocos(eqdsk)
+            cocos = detect_cocos(eqdsk_cmod)
             assert cocos == expected_cocos, (
                 f"Expected COCOS {expected_cocos} for C-Mod, got {cocos}"
             )
 
-        def test_detect_cocos_d3d(self):
+        def test_detect_cocos_d3d(self, eqdsk_d3d):
             """DIII-D uses EFIT convention (sigma_RphiZ=+1, e_Bp=0, psi increasing).
             COCOS depends on sign(Ip) and sign(B0)
+            https://efit-ai.gitlab.io/efit/files.html
             """
-            eqdsk_file = os.path.join(
-                PACKAGE_ROOT,
-                "..",
-                "submodules",
-                "OpenFUSIONToolkit",
-                "examples",
-                "TokaMaker",
-                "DIIID",
-                "g192185.02440",
-            )
-            with open(eqdsk_file, "r") as f:
-                eqdsk = freeqdsk.geqdsk.read(f)
 
-            sign_Ip = np.sign(eqdsk.cpasma)
-            sign_B0 = np.sign(float(eqdsk.bcentr))
+            sign_Ip = np.sign(eqdsk_d3d.cpasma)
+            sign_B0 = np.sign(float(eqdsk_d3d.bcentr))
 
             if sign_Ip > 0 and sign_B0 >= 0:
                 expected_cocos = 1
@@ -190,7 +266,105 @@ class TestCocos:
             else:
                 raise ValueError("Invalid signs for Ip and q")
 
-            cocos = detect_cocos(eqdsk)
+            cocos = detect_cocos(eqdsk_d3d)
             assert cocos == expected_cocos, (
                 f"Expected COCOS {expected_cocos} for DIII-D, got {cocos}"
+            )
+
+        @pytest.mark.skipif(
+            condition=not os.path.exists(
+                "/usr/local/mfe/ml_data_dump/TMDB/scratch/82878_tars_input.nc"
+            ),
+            reason="Test requires TCV data which is not open source",
+        )
+        def test_detect_cocos_tcv(self, eqdsk_tcv):
+            """TCV uses LIUQE which uses COCOS 17 (e_Bp=1, sign_Bp=-1, sign_RphiZ=1, sign_rhotp=1)"""
+            cocos = detect_cocos(eqdsk_tcv)
+            expected_cocos = 17
+            assert cocos == expected_cocos, (
+                f"Expected COCOS {expected_cocos} for TCV, got {cocos}"
+            )
+
+    class TestConvertCocos:
+        _TCV_FILE = "/usr/local/mfe/ml_data_dump/TMDB/scratch/82878_tars_input.nc"
+
+        @pytest.fixture
+        def eqdsk(self, request):
+            return request.getfixturevalue(request.param)
+
+        @pytest.mark.parametrize(
+            "eqdsk",
+            [
+                "eqdsk_cmod",
+                "eqdsk_d3d",
+                pytest.param(
+                    "eqdsk_tcv",
+                    marks=pytest.mark.skipif(
+                        condition=not os.path.exists(
+                            "/usr/local/mfe/ml_data_dump/TMDB/scratch/82878_tars_input.nc"
+                        ),
+                        reason="Test requires TCV data which is not open source",
+                    ),
+                ),
+            ],
+            indirect=True,
+        )
+        def test_convert_cocos_same(self, eqdsk):
+            """Test that converting to the same COCOS convention returns the same result"""
+            cocos = detect_cocos(eqdsk)
+            new_eqdsk = convert_cocos(eqdsk, cocos, cocos)
+
+            # Check that the new_eqdsk matches the original eqdsk
+            assert np.isclose(new_eqdsk.simagx, eqdsk.simagx), (
+                "simagx should be unchanged"
+            )
+            assert np.isclose(new_eqdsk.sibdry, eqdsk.sibdry), (
+                "sibdry should be unchanged"
+            )
+            assert np.allclose(new_eqdsk.psi, eqdsk.psi), (
+                "psi array should be unchanged"
+            )
+            assert np.allclose(new_eqdsk.fpol, eqdsk.fpol), (
+                "fpol array should be unchanged"
+            )
+            assert np.allclose(new_eqdsk.ffprime, eqdsk.ffprime), (
+                "ffprime array should be unchanged"
+            )
+            assert np.allclose(new_eqdsk.pprime, eqdsk.pprime), (
+                "pprime array should be unchanged"
+            )
+
+        @pytest.mark.parametrize(
+            "eqdsk",
+            [
+                "eqdsk_cmod",
+                "eqdsk_d3d",
+                pytest.param(
+                    "eqdsk_tcv",
+                    marks=pytest.mark.skipif(
+                        condition=not os.path.exists(
+                            "/usr/local/mfe/ml_data_dump/TMDB/scratch/82878_tars_input.nc"
+                        ),
+                        reason="Test requires TCV data which is not open source",
+                    ),
+                ),
+            ],
+            indirect=True,
+        )
+        def test_convert_cocos_internal(self, eqdsk):
+            """Test that converting to COCOS 1 (used internally) creates an equilibrium that has some expected properties."""
+            cocos_input = detect_cocos(eqdsk)
+            cocos_target = 1  # COCOS 1 is the convention used internally by SynthWave
+            eqdsk_cocos1 = convert_cocos(
+                eqdsk, cocos_target=cocos_target, cocos_input=cocos_input
+            )
+
+            detected_cocos = detect_cocos(eqdsk_cocos1)
+            assert detected_cocos == cocos_target, (
+                f"Expected converted COCOS to be {cocos_target}, got {detected_cocos}"
+            )
+
+            # Ensure psi_ref is increasing with minor radius
+            assert eqdsk_cocos1.sibdry > eqdsk_cocos1.simagx, (
+                f"Expected psi to increase from axis to boundary in COCOS {cocos_target}"
             )
