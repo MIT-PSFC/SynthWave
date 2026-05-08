@@ -347,7 +347,7 @@ class EquilibriumField:
             if (psi >= self.psi_grid[0]) and (psi <= self.psi_grid[-1]):
                 return psi
 
-            # If psi is too large, already lost
+            # If psi is too large, it is past the LCFS and we can't fix it
             if psi > self.psi_grid[-1]:
                 raise ValueError(
                     "Error: requested q=%1.3f is outside the gEQDSK range (q_max = %1.3f) and was unable to be fixed"
@@ -373,34 +373,34 @@ class EquilibriumField:
                 % (q, qpsi_grid[0])
             )
         else:
-            # negative-monotonic: index 0 at LCFS (high psi), index -1 at axis (low psi)
+            # negative-monotonic: index 0 at axis (high psi), index -1 at LCFS (low psi)
 
             # If psi is in range, return it unchanged
             if (psi >= self.psi_grid[-1]) and (psi <= self.psi_grid[0]):
                 return psi
 
-            # If psi is too large, already lost
-            if psi > self.psi_grid[0]:
+            # If psi is too small, it's outside the LCFS and we can't fix it
+            if psi < self.psi_grid[-1]:
                 raise ValueError(
                     "Error: requested q=%1.3f is outside the gEQDSK range (q_max = %1.3f) and was unable to be fixed"
-                    % (q, qpsi_grid[0])
+                    % (q, qpsi_grid[-1])
                 )
 
-            # If psi is too small, try to fix
-            if psi < self.psi_grid[-1]:
+            # If psi is too large, try to fix
+            if psi > self.psi_grid[0]:
                 if (
-                    np.argwhere(qpsi_grid < (qpsi_grid[-1] + 1e-3)).squeeze()[-1] > 1
-                ):  # multiple identical q values in a row
-                    lin_interp_q = np.polyfit(self.psi_grid[-30:], qpsi_grid[-30:], 1)
+                    np.argwhere(qpsi_grid < (qpsi_grid[0] + 1e-3)).squeeze().size > 1
+                ):  # multiple almost-identical q values in a row
+                    lin_interp_q = np.polyfit(self.psi_grid[:30], qpsi_grid[:30], 1)
                     psi_fixed = self.psi_grid[
                         np.argmin(
-                            np.abs(np.polyval(lin_interp_q, self.psi_grid[-30:]) - q)
+                            np.abs(np.polyval(lin_interp_q, self.psi_grid[:30]) - q)
                         )
                     ]
-                    if psi_fixed >= self.psi_grid[-1]:
+                    if psi_fixed <= self.psi_grid[0]:
                         return psi_fixed
 
             raise ValueError(
                 "Error: requested q=%1.3f is outside the gEQDSK range (q_min = %1.3f) and was unable to be fixed"
-                % (q, qpsi_grid[-1])
+                % (q, qpsi_grid[0])
             )
