@@ -1,17 +1,20 @@
-import xarray as xr
-from typing import Optional
-from enum import Enum
 from abc import ABC, abstractmethod
+from enum import Enum
+from fractions import Fraction
+from math import gcd
+from typing import Optional
+
 import numpy as np
+import xarray as xr
+from loguru import logger
 from scipy.interpolate import make_interp_spline
 from scipy.optimize import newton
 from sympy import nextprime
-from fractions import Fraction
-from synthwave.magnetic_geometry.utils import cylindrical_to_cartesian
 
 from synthwave.magnetic_geometry.equilibrium_field import (
     EquilibriumField,
 )
+from synthwave.magnetic_geometry.utils import cylindrical_to_cartesian
 
 
 class FilamentTracer(ABC):
@@ -30,7 +33,7 @@ class FilamentTracer(ABC):
 
         num_points = base_num_points
         if scale_points:
-            num_points = int(base_num_points * self.m / self.n)
+            num_points = int(base_num_points * abs(self.m) / self.n)
         if prevent_synthetic_structure:
             num_points = nextprime(num_points)
 
@@ -58,6 +61,15 @@ class FilamentTracer(ABC):
         if num_filaments <= 0:
             raise ValueError("num_filaments must be a positive integer")
 
+        ratio = Fraction(self.m, self.n)
+        n_local = ratio.denominator
+        if gcd(num_filaments, n_local) != 1:
+            raise ValueError(
+                f"num_filaments={num_filaments} and n_local={n_local} are not coprime "
+                f"(gcd={gcd(num_filaments, n_local)}), which would produce overlapping filaments. "
+                f"Choose a num_filaments that is coprime with {n_local}."
+            )
+
         if coordinate_system not in ["cylindrical", "cartesian", "toroidal"]:
             raise ValueError(
                 "coordinate_system must be either 'cylindrical', 'cartesian', or 'toroidal'"
@@ -76,10 +88,10 @@ class FilamentTracer(ABC):
             :, np.newaxis
         ]  # Apply toroidal offsets
 
-        # Complex currents for rotating wave: I(phi) = I_0 * exp(i*n*phi)
-        ratio = Fraction(self.m, self.n)
-        n_local = ratio.denominator
-        filament_currents = np.exp(1j * starting_angles * n_local)
+        # Complex currents for rotating wave: I(phi) = I_0 * exp(i*sign(m)*n*phi)
+        # The sign of m determines the direction of the rotating wave
+        m_sign = int(np.sign(ratio.numerator)) if ratio.numerator != 0 else 1
+        filament_currents = np.exp(1j * starting_angles * m_sign * n_local)
 
         if coordinate_system == "cylindrical":
             ds = xr.Dataset(
@@ -252,6 +264,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
         scale_points: Optional[bool] = True,
         prevent_synthetic_structure: Optional[bool] = True,
         default_trace_type: TraceType = TraceType.SINGLE,
+        helicity_sign: Optional[int] = None,
     ):
         """Initialize an equilibrium filament.
 
@@ -271,19 +284,30 @@ class EquilibriumFilamentTracer(FilamentTracer):
             Whether to adjust the number of points to the next prime number to avoid synthetic structures in simulations.
         default_trace_type : TraceType, optional
             Default tracing method to use
+        helicity_sign : int, optional
+            Sign of the helicity used when following the field lines. A value of
+            ``+1`` traces in the default direction, while ``-1`` reverses the direction.
+            If ``None`` (default), the sign is inferred from the sign of ``m``.
 
         """
         super().__init__(
-            m, n, int(base_num_points), scale_points, prevent_synthetic_structure
+            m,
+            n,
+            int(base_num_points),
+            scale_points,
+            prevent_synthetic_structure,
         )
         self.eq_field = eq_field
         self.default_trace_type = default_trace_type
+        self.helicity_sign = (
+            helicity_sign if helicity_sign is not None else (1 if m >= 0 else -1)
+        )
+        self.trace_cache = {}
 
     def trace(
         self,
         num_points: Optional[int] = None,
-        trace_type: TraceType = TraceType.SINGLE,
-        helicity_sign: int = +1,
+        trace_type: TraceType = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Trace a filament along the equilibrium magnetic field.
 
@@ -296,10 +320,6 @@ class EquilibriumFilamentTracer(FilamentTracer):
             Tracing strategy to use. This controls how the field is followed when
             computing the filament shape (e.g., cylindrical approximation, naive,
             single-point, or averaged tracing).
-        helicity_sign : int, optional
-            Sign of the helicity used when following the field lines. A value of
-            ``+1`` traces in the default direction, while ``-1`` reverses the
-            direction.
 
         Returns
         -------
@@ -310,12 +330,21 @@ class EquilibriumFilamentTracer(FilamentTracer):
 
         if num_points is None:
             num_points = self.num_points
+        if trace_type is None:
+            trace_type = self.default_trace_type
+
+        key = (num_points, trace_type)
+        if key in self.trace_cache:
+            logger.info(
+                f"Using cached filament trace for num_points={num_points} and trace_type={trace_type}"
+            )
+            return self.trace_cache[key]
 
         # Correction for m/n as integer multiples (otherwise leads to ``wandering'' filaments)
         ratio = Fraction(self.m, self.n)
-        m_local = ratio.numerator
+        m_local = np.abs(ratio.numerator)
         n_local = ratio.denominator
-        psi_q = self.eq_field.get_psi_of_q(m_local / n_local)
+        psi_q = self.eq_field.get_psi_of_q(np.abs(m_local / n_local))
 
         filament_etas = np.linspace(0, 2 * np.pi, num_points)
         poloidal_points = np.zeros((num_points, 3))  # R, Z, a
@@ -338,7 +367,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
 
         # Currently: +m/+n helicity matches empirical C-Mod pickup
         def _Z_a(eta, a):
-            Z = self.eq_field.eqdsk.zmagx + (helicity_sign) * (a * np.sin(eta))
+            Z = self.eq_field.eqdsk.zmagx + (self.helicity_sign) * (a * np.sin(eta))
             return Z
 
         def psi_prime_a(eta, a):
@@ -346,7 +375,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
             R = _R_a(eta, a)
             Z = _Z_a(eta, a)
             return self.eq_field.psi.ev(R, Z, dx=1, dy=0) * np.cos(eta) + (
-                helicity_sign
+                self.helicity_sign
             ) * self.eq_field.psi.ev(R, Z, dx=0, dy=1) * np.sin(eta)
 
         for i, eta in enumerate(filament_etas):
@@ -420,39 +449,29 @@ class EquilibriumFilamentTracer(FilamentTracer):
                 phi = np.cumsum(d_phi_avg) - d_phi_avg[0]
 
             # Numerical correction to ensure final point is at the proper angle
-            # We can do this multiple times, whenever we know for sure that the phi is a multiple of pi * m / n
 
-            # Sign flip necessary to account for helicity direction so known_phis matches the sign of the traced phi values
+            # Sign flip necessary to account for helicity direction so known_phi_end matches the sign of the traced phi values
             # Note: The improved d_phi method should ensure this is always correct now [e.g. the correction factor is no longer strictly necessary]
-            known_phis = np.linspace(
-                0, 2 * np.pi * m_local / n_local, (2 * n_local) + 1
-            ) * np.sign(phi[-1])
+            # TODO(ZanderKeith) the improved d_phi method is most certainly not always correct, discuss with Rian
+            known_phi_end = self.helicity_sign * 2 * np.pi * m_local / n_local
 
-            for i, known_phi_start in enumerate(known_phis[:-1]):
-                known_phi_end = known_phis[i + 1]
-
-                if np.sign(phi[-1]) == 1:
-                    phi_indices = np.squeeze(
-                        np.where((phi >= known_phi_start) & (phi <= known_phi_end))
-                    )
-                else:
-                    phi_indices = np.squeeze(
-                        np.where((phi <= known_phi_start) & (phi >= known_phi_end))
-                    )
-
-                actual_phi_start = phi[phi_indices[0]]
-                actual_phi_end = phi[phi_indices[-1]]
-                correction_factor = (known_phi_end - known_phi_start) / (
-                    actual_phi_end - actual_phi_start
+            # If actual phi significantly deviates from known phis, log a critical warning
+            if not np.isclose(phi[-1], known_phi_end, atol=0.5):
+                logger.critical(
+                    f"Final phi value deviates significantly from known phi values!\nExpected: {known_phi_end}\nActual: {phi[-1]}"
                 )
 
-                phi[phi_indices] = (
-                    known_phi_start
-                    + (phi[phi_indices] - actual_phi_start) * correction_factor
-                )
+            actual_phi_start = phi[0]
+            actual_phi_end = phi[-1]
+            correction_factor = known_phi_end / (actual_phi_end - actual_phi_start)
+
+            phi = (phi - actual_phi_start) * correction_factor
 
             filament_points = np.column_stack((R, phi, Z))
         else:
             raise ValueError("Unknown tracing trace_type")
+
+        # Cache the traced filament
+        self.trace_cache[key] = (filament_points, filament_etas)
 
         return filament_points, filament_etas

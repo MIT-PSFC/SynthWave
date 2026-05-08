@@ -1,14 +1,15 @@
+import os
+from typing import Optional
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pyvista
+import vtk
+import xarray as xr
 from OpenFUSIONToolkit import OFT_env
 from OpenFUSIONToolkit.ThinCurr import ThinCurr
-import numpy as np
-import xarray as xr
-import pyvista
-import os
-import matplotlib.pyplot as plt
+
 from synthwave.magnetic_geometry.filaments import FilamentTracer
-from typing import Optional
-import vtk
-from synthwave import VESSEL_CACHE_DIR
 
 
 def calc_direct_response(
@@ -27,15 +28,23 @@ def calc_direct_response(
 
     # Create thin wall model
     tw_model = ThinCurr(oft_env)
-    tw_model.setup_model(
-        mesh_file=mesh_file,
-        xml_filename=os.path.join(working_directory, "oft_in.xml"),
-    )
-    tw_model.setup_io(working_directory)
+    try:
+        tw_model.setup_model(
+            mesh_file=mesh_file,
+            xml_filename=os.path.join(working_directory, "oft_in.xml"),
+        )
+
+        tw_model.setup_io(working_directory)
+    except Exception as e:
+        print(f"Error setting up ThinCurr model: {e}")
+        print(f"Mesh file: {mesh_file}")
+        print(f"xml file: {os.path.join(working_directory, 'oft_in.xml')}")
+        raise e
 
     # Calculate mutual inductances
 
     # finite element mesh -> sensor, coil -> sensor
+    # This should be fast since we're using a simple vessel mesh
     _, Msc, sensor_obj = tw_model.compute_Msensor(sensor_file_path)
 
     # Build driver from filaments
@@ -53,18 +62,18 @@ def calc_direct_response(
     direct_response_ds = xr.Dataset(
         data_vars={
             "direct_response_real": (
-                ["sensor"],
+                ["sensor_idx"],
                 direct_response.real,
             ),
             "direct_response_imag": (
-                ["sensor"],
+                ["sensor_idx"],
                 direct_response.imag,
             ),
         },
         coords={
-            "sensor": sensor_obj[
+            "sensor_idx": sensor_obj[
                 "names"
-            ]  # Define the 'sensor' coordinate with the list of sensor names
+            ]  # Define the 'sensor_idx' coordinate with the list of sensor names
         },
         attrs={
             "mesh_file": mesh_file,
@@ -82,7 +91,11 @@ def calc_frequency_response(
     mesh_file: str,
     working_directory: str,
     sensor_file_path: Optional[str] = None,
+    sensor_details: Optional[xr.Dataset] = None,
     debug_plot_path: Optional[str] = None,
+    vessel_cache_path: Optional[str] = None,
+    msensor_cache_path: Optional[str] = None,
+    mcoil_cache_path: Optional[str] = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Calculate the measured frequency response at the given sensors due to filaments defined by the tracer.
@@ -98,13 +111,18 @@ def calc_frequency_response(
         mesh_file (str): Path to the vessel mesh file for ThinCurr
         working_directory (str): Directory to read/write ThinCurr files
         sensor_file_path (str): Path to the sensor file for ThinCurr
+        sensor_details (xr.Dataset): Dataset containing details about the sensors, used for debug plotting
         debug_plot_path (str, optional): If provided, path prefix to save debug plots
+
 
     Returns:
         total_response (np.ndarray): Complex array of total sensor signals [T]
         direct_response (np.ndarray): Complex array of sensor signals due to direct filament coupling [T]
         vessel_response (np.ndarray): Complex array of sensor signals due to vessel currents [T]
     """
+
+    # Directory for caching inductance matrices, which can take a long time to compute
+    # ThinCurr checks the hashes of input files to determine if cache is valid
 
     # Create thin wall model
     tw_model = ThinCurr(oft_env)
@@ -117,15 +135,19 @@ def calc_frequency_response(
     # Calculate mutual inductances
 
     # finite element mesh -> sensor, coil -> sensor
-    Msensor, Msc, sensor_obj = tw_model.compute_Msensor(sensor_file_path)
+    Msensor, Msc, _sensor_obj = tw_model.compute_Msensor(
+        sensor_file=sensor_file_path,
+        cache_file=msensor_cache_path,
+    )
 
     # filament -> finite element mesh
-    Mc = tw_model.compute_Mcoil()
+    Mc = tw_model.compute_Mcoil(
+        cache_file=mcoil_cache_path,
+    )
 
     # Build inductance matrix
-    cache_file = os.path.join(VESSEL_CACHE_DIR, os.path.basename(mesh_file))
     tw_model.compute_Lmat(
-        cache_file=cache_file,
+        cache_file=vessel_cache_path,
         use_hodlr=True,
     )
     tw_model.compute_Rmat()
@@ -187,7 +209,7 @@ def calc_frequency_response(
         plotter.screenshot(f"{debug_plot_path}_vessel.png", transparent_background=True)
 
         # Plot some filaments
-        plot_filaments, plot_currents = tracer.get_filament_list(num_filaments=6)
+        plot_filaments, plot_currents = tracer.get_filament_list(num_filaments=20)
         for filament, current in zip(plot_filaments, plot_currents):
             filament_spline = pyvista.Spline(filament, len(filament))
 
@@ -201,11 +223,11 @@ def calc_frequency_response(
                 opacity=1,
             )
 
-        sensor_details = sensor_obj["details"]  # Hack for now
+        # sensor_details = sensor_obj["details"]  # Hack for now
 
         # Plot sensors
-        for sensor in sensor_details.sensor:
-            sensor_data = sensor_details.sel(sensor=sensor)
+        for sensor in sensor_details.sensor_idx:
+            sensor_data = sensor_details.sel(sensor_idx=sensor)
             sensor_point = sensor_data.position.data
             plotter.add_points(
                 sensor_point,
@@ -219,6 +241,9 @@ def calc_frequency_response(
 
         # Have the view be top-down
         plotter.view_xy()
+
+        plotter.render()
+
         plotter.screenshot(
             f"{debug_plot_path}_topdown.png", transparent_background=True
         )
@@ -229,8 +254,24 @@ def calc_frequency_response(
             (0, 0, 0),  # Focal point at the origin
             (0, 0, 1),  # View up direction along z-axis
         ]
+
+        plotter.render()
+
         plotter.screenshot(
             f"{debug_plot_path}_xzplane.png", transparent_background=True
+        )
+
+        # # Have the view be a slice through the xz plane
+        # plotter.camera_position = [
+        #     (0, -0.1, 0),  # Position of the camera, set a little back on y-axis
+        #     (.8, 0, .5),  # Focal point at the mag-ax
+        #     (1, 0, 0),  # View up direction along x-axis
+        # ]
+        plotter.view_zy()
+        plotter.render()
+
+        plotter.screenshot(
+            f"{debug_plot_path}_xyplane.png", transparent_background=True
         )
 
         plotter.close()
@@ -326,14 +367,14 @@ def run_frequency_scan(
     sensors_body = xr.Dataset(
         data_vars={
             "signal": (
-                ["sensor"],
+                ["sensor_idx"],
                 sensor_signals,
-            )  # Use a single data variable with a 'sensor' dimension
+            )  # Use a single data variable with a 'sensor_idx' dimension
         },
         coords={
-            "sensor": sensor_obj[
+            "sensor_idx": sensor_obj[
                 "names"
-            ]  # Define the 'sensor' coordinate with the list of sensor names
+            ]  # Define the 'sensor_idx' coordinate with the list of sensor names
         },
         attrs={
             "mesh_file": mesh_file,
@@ -483,10 +524,10 @@ def correct_frequency_response(
     # e.g. sensor_correction = {'Mirnov1': lambda f: 1/(1+1j*f/1000), 'Mirnov2': lambda f: 1/(1+1j*f/2000)}
     # also correct into Bdot by multiplying by 2*pi*f
 
-    for i, sensor_name in enumerate(sensors_bode["sensor"].values):
-        sensors_bode.loc[{"sensor": sensor_name}] *= sensor_freq_response[sensor_name](
-            np.array([freq])
-        )[0] * (2 * np.pi * freq)
+    for i, sensor_name in enumerate(sensors_bode["sensor_idx"].values):
+        sensors_bode.loc[{"sensor_idx": sensor_name}] *= sensor_freq_response[
+            sensor_name
+        ](np.array([freq]))[0] * (2 * np.pi * freq)
 
     if doSave:
         sensors_bode.to_netcdf(

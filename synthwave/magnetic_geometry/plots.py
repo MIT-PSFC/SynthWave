@@ -1,11 +1,25 @@
-import numpy as np
+import h5py
 import matplotlib.pyplot as plt
+import numpy as np
 
-from synthwave.magnetic_geometry.filaments import FilamentTracer, ToroidalFilamentTracer
+from synthwave.magnetic_geometry.filaments import FilamentTracer
+
+
+def _clean_fig(fig):
+    # fig shows in Jupyter notebooks and is cleaned up in scripts
+    try:
+        from IPython.display import display as ipy_display
+
+        ipy_display(fig)
+    except ImportError:
+        plt.show()
+    plt.close(fig)
 
 
 def plot_filaments_3d(
-    tracer: FilamentTracer, fig_file: str, title: str = "Filament Traces in 3D"
+    tracer: FilamentTracer,
+    title: str | None = "Filament Traces in 3D",
+    fig_file: str | None = None,
 ):
     """
     Plot the filaments traced by the FilamentTracer in 3D with 4 different viewing angles.
@@ -92,10 +106,42 @@ def plot_filaments_3d(
     cbar.set_label("Filament Current [A]")
 
     fig.tight_layout()
-    fig.savefig(fig_file)
-    plt.close(fig)
+    if fig_file is not None:
+        fig.savefig(fig_file, dpi=300)
+    # fig shows in Jupyter notebooks and is cleaned up in scripts
+    _clean_fig(fig)
 
 
-if __name__ == "__main__":
-    tracer = ToroidalFilamentTracer(3, 2, 1, 0, 0.5, 100)
-    plot_filaments_3d(tracer, "filament_traces_3d.png", "Toroidal Filament Traces")
+def plot_model_mesh(mesh_file, fig_file=None):
+    # Read mesh data from HDF5 file for plotting
+    with h5py.File(mesh_file, "r") as f:
+        r = f["mesh/R"][:]  # Vertices
+        lc = f["mesh/LC"][:]  # Triangles (1-indexed)
+        reg = f["mesh/REG"][:]  # noqa: F841 Regions
+
+    # Find maximum extent in each direction for setting equal aspect ratio
+    max_range = (
+        np.array(
+            [
+                r[:, 0].max() - r[:, 0].min(),
+                r[:, 1].max() - r[:, 1].min(),
+                r[:, 2].max() - r[:, 2].min(),
+            ]
+        ).max()
+        / 2.0
+    )
+
+    # Plot using matplotlib
+    fig = plt.figure(figsize=(8, 8))
+    ax = fig.add_subplot(111, projection="3d")
+    ax.plot_trisurf(r[:, 0], r[:, 1], r[:, 2], triangles=lc - 1, alpha=0.7)
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
+    ax.set_xlim(r[:, 0].mean() - max_range, r[:, 0].mean() + max_range)
+    ax.set_ylim(r[:, 1].mean() - max_range, r[:, 1].mean() + max_range)
+    ax.set_zlim(r[:, 2].mean() - max_range, r[:, 2].mean() + max_range)
+    if fig_file is not None:
+        fig.savefig(fig_file, dpi=300)
+    # fig shows in Jupyter notebooks and is cleaned up in scripts
+    _clean_fig(fig)

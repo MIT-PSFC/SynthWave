@@ -15,23 +15,22 @@ Modified by Zander Keith
 """
 
 import os
+from typing import Optional
+
 import numpy as np
 import xarray as xr
-from typing import Optional
 from freeqdsk import geqdsk
+
 from synthwave import PACKAGE_ROOT
-
 from synthwave.magnetic_geometry.filaments import FilamentTracer
-
 from synthwave.mirnov.prep_thincurr_input import (
     gen_OFT_sensors_file,
 )
-
 from synthwave.mirnov.run_thincurr_model import (
-    get_mesh,
-    run_frequency_scan,
-    makePlots,
     correct_frequency_response,
+    get_mesh,
+    makePlots,
+    run_frequency_scan,
 )
 
 
@@ -87,7 +86,7 @@ def thincurr_synthetic_mirnov_signal(
     sensor_freq_response: dict = {},
     doPlot: bool = False,
     doSave: bool = False,
-    plotParams: dict = {"clim_J": [0, 0.5]},
+    plotParams: dict = None,
 ) -> xr.Dataset:
     """
     Calculate the real and imaginary components of the magnetic sensor signals using ThinCurr.
@@ -111,6 +110,9 @@ def thincurr_synthetic_mirnov_signal(
     Returns:
         xr.Dataset: Dataset containing the simulated sensor signals in [T/s].
     """
+
+    if plotParams is None:
+        plotParams = {"clim_J": [0, 0.5]}
 
     ######################################################################################
     # Prepare filament currents, locations
@@ -239,7 +241,9 @@ if __name__ == "__main__":
         return Z_C(w) / Z_total(w)  # Voltage across capacitor / input voltage
 
     # Frequency response dictionary for each sensor
-    freq_response_dict = {name: H for name in sensor_details.coords["sensor"].values}
+    freq_response_dict = {
+        name: H for name in sensor_details.coords["sensor_idx"].values
+    }
 
     ###################
     debug = True
