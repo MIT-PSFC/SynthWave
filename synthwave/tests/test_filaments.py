@@ -919,6 +919,58 @@ class TestEquilibriumFilamentTracer:
         assert filament_ds["y"].shape == (num_filaments, equilibrium_tracer.num_points)
         assert filament_ds["z"].shape == (num_filaments, equilibrium_tracer.num_points)
 
+    @pytest.mark.parametrize(
+        "mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": 3, "n": 1}, {"m": 4, "n": 3}]
+    )
+    @pytest.mark.parametrize("helicity", [("positive", 1), ("negative", -1)])
+    @pytest.mark.parametrize("current_sign", [("positive", 1), ("negative", -1)])
+    def test_trace_satisfies_cocos(self, cmod_eqdsk, mode, helicity, current_sign):
+        """Test basic tracing functionality."""
+        eqdsk = cmod_eqdsk
+        if current_sign[0] == "positive":
+            # C-Mod equilibrium with COCOS 1 has negative current, so flip sign to get positive current case
+            eqdsk.cpasma = -eqdsk.cpasma
+        eq_field = EquilibriumField(eqdsk)
+
+        base_num_points = 100
+        tracer = EquilibriumFilamentTracer(
+            mode["m"] * helicity[1],
+            mode["n"],
+            eq_field,
+            base_num_points=base_num_points,
+            scale_points=False,
+        )
+        points, _etas = tracer.trace()
+        sign_dphi = np.sign(points[1, 1] - points[0, 1])
+        sign_dZ = np.sign(points[1, 2] - points[0, 2])
+
+        sign_Ip = current_sign[1]
+        # Sign Ip positive -> Bp points in -Z
+        # Sign Ip negative -> Bp points in +Z
+        if sign_Ip > 0:
+            sign_dZ_expected = -1
+        elif sign_Ip < 0:
+            sign_dZ_expected = 1
+        else:
+            raise ValueError(
+                "Unexpected zero current case, should be either positive or negative"
+            )
+
+        # Always assuming sign_B0 is negative for this eqdsk (typical of C-Mod to run in negative B0)
+        sign_dphi_expected = -1
+
+        # With negative helicity, trace is antiparallel to field line, so flip expected signs
+        if helicity[0] == "negative":
+            sign_dphi_expected *= -1
+            sign_dZ_expected *= -1
+
+        assert sign_dphi == sign_dphi_expected, (
+            f"Unexpected sign of dphi: got {sign_dphi}, expected {sign_dphi_expected}"
+        )
+        assert sign_dZ == sign_dZ_expected, (
+            f"Unexpected sign of dZ: got {sign_dZ}, expected {sign_dZ_expected}"
+        )
+
 
 class TestAllFilamentTracers:
     """Test common functionality for all filament tracers."""
