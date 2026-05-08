@@ -313,9 +313,9 @@ class TestToroidalFilamentTracer:
             ratio = tick / np.pi
             frac = Fraction(int(ratio * 2), 2).limit_denominator()
             if frac.denominator == 1:
-                x_labels.append(f"${frac.numerator}\pi$")
+                x_labels.append(rf"${frac.numerator}\pi$")
             else:
-                x_labels.append(f"${frac.numerator}\pi/{frac.denominator}$")
+                x_labels.append(rf"${frac.numerator}\pi/{frac.denominator}$")
 
         # Plot real component of current
         scatter1 = ax1.scatter(
@@ -378,6 +378,7 @@ class TestToroidalFilamentTracer:
                 r"$2\pi$",
             ]
         )
+        ax1.invert_yaxis()
 
         cbar1 = plt.colorbar(scatter1, ax=ax1)
         cbar1.set_label("Re(I)")
@@ -443,6 +444,7 @@ class TestToroidalFilamentTracer:
                 r"$2\pi$",
             ]
         )
+        ax2.invert_yaxis()
 
         cbar2 = plt.colorbar(scatter2, ax=ax2)
         cbar2.set_label("Im(I)")
@@ -676,14 +678,14 @@ class TestEquilibriumFilamentTracer:
             frac = Fraction(int(ratio * 2), 2).limit_denominator()
             if frac.denominator == 1:
                 if frac.numerator > 0:
-                    x_labels.append(f"${frac.numerator}\pi$")
+                    x_labels.append(rf"${frac.numerator}\pi$")
                 else:
-                    x_labels.append(f"${frac.numerator}\pi$")
+                    x_labels.append(rf"${frac.numerator}\pi$")
             else:
                 if frac.numerator > 0:
-                    x_labels.append(f"${frac.numerator}\pi/{frac.denominator}$")
+                    x_labels.append(rf"${frac.numerator}\pi/{frac.denominator}$")
                 else:
-                    x_labels.append(f"$-{abs(frac.numerator)}\pi/{frac.denominator}$")
+                    x_labels.append(rf"$-{abs(frac.numerator)}\pi/{frac.denominator}$")
 
         # Plot real component of current
         scatter1 = ax1.scatter(
@@ -746,6 +748,7 @@ class TestEquilibriumFilamentTracer:
                 r"$2\pi$",
             ]
         )
+        ax1.invert_yaxis()
 
         cbar1 = plt.colorbar(scatter1, ax=ax1)
         cbar1.set_label("Re(I)")
@@ -811,6 +814,7 @@ class TestEquilibriumFilamentTracer:
                 r"$2\pi$",
             ]
         )
+        ax2.invert_yaxis()
 
         cbar2 = plt.colorbar(scatter2, ax=ax2)
         cbar2.set_label("Im(I)")
