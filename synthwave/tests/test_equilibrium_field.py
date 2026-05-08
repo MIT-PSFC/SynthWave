@@ -1,7 +1,6 @@
 """Tests for EquilibriumField methods."""
 
 import os
-import unittest.mock as mock
 
 import freeqdsk
 import netCDF4  # noqa: F401 - must precede any OpenFUSIONToolkit import to avoid HDF5 conflict
@@ -69,68 +68,77 @@ class TestEquilibriumField:
             """When psi is far outside range, ValueError must be raised."""
             eq_field = EquilibriumField(eqdsk)
             qpsi_grid = eq_field.qpsi(eq_field.psi_grid)
-            # Use a psi value above psi_grid[-1] (past the LCFS for increasing grid)
-            psi_far = eq_field.psi_grid[-1] + abs(eq_field.psi_grid[-1]) * 10
+            # Use a psi value beyond psi_grid[-1] (past the LCFS grid)
+            # For the C-Mod equilibrium converted to COCOS 1 with negative current,
+            # psi_grid is decreasing from the axis to LCFS
+            psi_far = eq_field.psi_grid[-1] - abs(eq_field.psi_grid[-1]) * 10
             with pytest.raises(ValueError, match="outside the gEQDSK range"):
                 eq_field.core_psi_consistency_check(qpsi_grid, psi_far, 100.0)
 
         def test_core_psi_consistency_check_monotonic(self, eqdsk):
-            """Boundary check works correctly for an increasing and synthetic decreasing psi_grid."""
-            eq_field = EquilibriumField(eqdsk)
+            """Boundary check works correctly for a decreasing and synthetic increasing psi_grid."""
+            # C-Mod equilibrium converted to COCOS 1 with a negative plasma current
+            # should have a decreasing psi_grid from axis to LCFS
+            eq_field_neg = EquilibriumField(eqdsk)
 
-            # Test with the default increasing psi_grid and a qpsi_grid that's increasing but has a plateau near the axis
-            qpsi_grid = eq_field.qpsi(eq_field.psi_grid)
+            # Test with the default decreasing psi_grid and a qpsi_grid that's increasing but has a plateau near the axis
+            qpsi_grid = eq_field_neg.qpsi(eq_field_neg.psi_grid)
             qpsi_grid[1] = qpsi_grid[0] + 1e-4  # create a small plateau near the axis
 
             # A psi in range should pass through unchanged
-            psi_mid = (eq_field.psi_grid[0] + eq_field.psi_grid[-1]) / 2
-            result = eq_field.core_psi_consistency_check(qpsi_grid, psi_mid, 2.0)
+            psi_mid = (eq_field_neg.psi_grid[0] + eq_field_neg.psi_grid[-1]) / 2
+            result = eq_field_neg.core_psi_consistency_check(qpsi_grid, psi_mid, 2.0)
+            assert result == psi_mid
+
+            # A psi too high (past axis) should be fixed if possible
+            psi_too_high = (
+                eq_field_neg.psi_grid[0] + abs(eq_field_neg.psi_grid[0]) * 0.5
+            )
+            psi_fixed = eq_field_neg.core_psi_consistency_check(
+                qpsi_grid, psi_too_high, 0.1
+            )
+            assert eq_field_neg.psi_grid[0] >= psi_fixed >= eq_field_neg.psi_grid[-1], (
+                "Fixed psi must be within psi_grid bounds"
+            )
+
+            # A psi too low (past LCFS) must raise
+            psi_too_low = (
+                eq_field_neg.psi_grid[-1] - abs(eq_field_neg.psi_grid[-1]) * 0.5
+            )
+            with pytest.raises(ValueError, match="outside the gEQDSK range"):
+                eq_field_neg.core_psi_consistency_check(qpsi_grid, psi_too_low, 100.0)
+
+            # Invert plasma current to create a genuinely increasing psi_grid
+            eqdsk.cpasma = (
+                -eqdsk.cpasma
+            )  # flip the sign of plasma current to flip psi_grid
+            eq_field_pos = EquilibriumField(eqdsk)
+            qpsi_grid = eq_field_pos.qpsi(eq_field_pos.psi_grid)
+            qpsi_grid[1] = qpsi_grid[0] + 1e-4  # create a small plateau near the axis
+            assert np.all(np.diff(eq_field_pos.psi_grid) > 0), (
+                "COCOS 1 and positive Ip should yield an increasing psi_grid from axis to LCFS"
+            )
+
+            # A psi well in range should pass through unchanged
+            psi_mid = (eq_field_pos.psi_grid[0] + eq_field_pos.psi_grid[-1]) / 2
+            result = eq_field_pos.core_psi_consistency_check(qpsi_grid, psi_mid, 2.0)
             assert result == psi_mid
 
             # A psi too low (past axis) should be fixed if possible
-            psi_too_low = eq_field.psi_grid[0] - abs(eq_field.psi_grid[0]) * 0.5
-            psi_fixed = eq_field.core_psi_consistency_check(qpsi_grid, psi_too_low, 0.1)
-            assert eq_field.psi_grid[0] <= psi_fixed <= eq_field.psi_grid[-1], (
+            psi_too_low = eq_field_pos.psi_grid[0] - abs(eq_field_pos.psi_grid[0]) * 0.5
+            psi_fixed = eq_field_pos.core_psi_consistency_check(
+                qpsi_grid, psi_too_low, 0.1
+            )
+            assert eq_field_pos.psi_grid[0] <= psi_fixed <= eq_field_pos.psi_grid[-1], (
                 "Fixed psi must be within psi_grid bounds"
             )
 
             # A psi too high (past LCFS) must raise
-            psi_too_high = eq_field.psi_grid[-1] + abs(eq_field.psi_grid[-1]) * 0.5
-            with pytest.raises(ValueError, match="outside the gEQDSK range"):
-                eq_field.core_psi_consistency_check(qpsi_grid, psi_too_high, 100.0)
-
-            # Reverse to create a genuinely decreasing psi_grid and qpsi_grid (index 0 at LCFS, index -1 at axis)
-            decreasing_psi = eq_field.psi_grid[::-1]
-            decreasing_q = eq_field.qpsi(eq_field.psi_grid)[::-1]
-            decreasing_q[-2] = (
-                decreasing_q[-1] - 1e-4
-            )  # create a small plateau near the axis
-            assert np.all(np.diff(decreasing_psi) < 0), (
-                "decreasing_psi must be decreasing"
+            psi_too_high = (
+                eq_field_pos.psi_grid[-1] + abs(eq_field_pos.psi_grid[-1]) * 0.5
             )
-
-            # Patch the equilibrium field's psi_grid with our synthetic decreasing grid
-            with mock.patch.object(eq_field, "psi_grid", decreasing_psi):
-                # A psi well inside the decreasing range should pass through unchanged
-                psi_mid = (decreasing_psi[0] + decreasing_psi[-1]) / 2
-                result = eq_field.core_psi_consistency_check(decreasing_q, psi_mid, 2.0)
-                assert result == psi_mid
-
-                # A psi too low (past axis) should be fixed if possible
-                psi_too_low = decreasing_psi[-1] - abs(decreasing_psi[-1]) * 0.5
-                psi_fixed = eq_field.core_psi_consistency_check(
-                    decreasing_q, psi_too_low, 0.1
-                )
-                assert decreasing_psi[-1] <= psi_fixed <= decreasing_psi[0], (
-                    "Fixed psi must be within psi_grid bounds"
-                )
-
-                # A psi too high (past LCFS) must raise
-                psi_too_high = decreasing_psi[0] + abs(decreasing_psi[0]) * 0.5
-                with pytest.raises(ValueError, match="outside the gEQDSK range"):
-                    eq_field.core_psi_consistency_check(
-                        decreasing_q, psi_too_high, 100.0
-                    )
+            with pytest.raises(ValueError, match="outside the gEQDSK range"):
+                eq_field_pos.core_psi_consistency_check(qpsi_grid, psi_too_high, 100.0)
 
 
 class TestCocos:
