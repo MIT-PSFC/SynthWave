@@ -2,11 +2,11 @@
 
 import os
 
-import xarray as xr
-from scipy.interpolate import interp1d
 import freeqdsk
 import numpy as np
 import pytest
+import xarray as xr
+from scipy.interpolate import interp1d
 
 from synthwave import PACKAGE_ROOT
 from synthwave.magnetic_geometry.equilibrium_field import (
@@ -316,11 +316,16 @@ class TestCocos:
             ds_input_path = os.path.join(
                 PACKAGE_ROOT, "tests", "test_data", "82878_tars_input.nc"
             )
-            
+
             ds = xr.open_dataset(ds_input_path, engine="h5netcdf")
+
+            # drop timeslices with no valid equilibrium data
+            valid_times = ds["psirz"].notnull().any(dim=["r_idx", "z_idx"])
+            ds = ds.sel(time_idx=valid_times)
+
             prev_cocos = None
             for time_idx in ds.time_idx:
-                ds_eq = ds.sel(time_idx=time_idx).isel(frequency_idx=0)
+                ds_eq = ds.sel(time_idx=time_idx)
                 eqdsk = TestCocos.xr_to_eqdsk(ds_eq)
                 cocos = detect_cocos(eqdsk)
                 if prev_cocos is not None:
@@ -343,7 +348,12 @@ class TestCocos:
                     "eqdsk_tcv",
                     marks=pytest.mark.skipif(
                         condition=not os.path.exists(
-                            os.path.join(PACKAGE_ROOT, "tests", "test_data", "82878_tars_input.nc")
+                            os.path.join(
+                                PACKAGE_ROOT,
+                                "tests",
+                                "test_data",
+                                "82878_tars_input.nc",
+                            )
                         ),
                         reason="Test requires TCV data which is not open source",
                     ),
@@ -385,7 +395,12 @@ class TestCocos:
                     "eqdsk_tcv",
                     marks=pytest.mark.skipif(
                         condition=not os.path.exists(
-                            os.path.join(PACKAGE_ROOT, "tests", "test_data", "82878_tars_input.nc")
+                            os.path.join(
+                                PACKAGE_ROOT,
+                                "tests",
+                                "test_data",
+                                "82878_tars_input.nc",
+                            )
                         ),
                         reason="Test requires TCV data which is not open source",
                     ),
@@ -437,7 +452,12 @@ class TestCocos:
                     "eqdsk_tcv",
                     marks=pytest.mark.skipif(
                         condition=not os.path.exists(
-                            os.path.join(PACKAGE_ROOT, "tests", "test_data", "82878_tars_input.nc")
+                            os.path.join(
+                                PACKAGE_ROOT,
+                                "tests",
+                                "test_data",
+                                "82878_tars_input.nc",
+                            )
                         ),
                         reason="Test requires TCV data which is not open source",
                     ),
