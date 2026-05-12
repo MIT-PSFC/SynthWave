@@ -2,8 +2,9 @@
 
 import os
 
+import xarray as xr
+from scipy.interpolate import interp1d
 import freeqdsk
-import netCDF4  # noqa: F401 - must precede any OpenFUSIONToolkit import to avoid HDF5 conflict
 import numpy as np
 import pytest
 
@@ -170,15 +171,19 @@ class TestCocos:
 
     @pytest.fixture(scope="class")
     def eqdsk_tcv(self):
-        import xarray as xr
-        from scipy.interpolate import interp1d
-
-        fname = "/usr/local/mfe/ml_data_dump/TMDB/scratch/82878_tars_input.nc"
+        ds_input_path = os.path.join(
+            PACKAGE_ROOT, "tests", "test_data", "82878_tars_input.nc"
+        )
         tidx = 1100
 
-        ds = xr.open_dataset(fname)
+        ds = xr.open_dataset(ds_input_path, engine="h5netcdf")
         ds_eq = ds.sel(time_idx=tidx).isel(frequency_idx=0)
 
+        eqdsk = self.xr_to_eqdsk(ds_eq)
+        return eqdsk
+
+    @staticmethod
+    def xr_to_eqdsk(ds_eq):
         nx = len(ds_eq["rgrid"])
         ny = len(ds_eq["zgrid"])
 
@@ -287,7 +292,7 @@ class TestCocos:
 
         @pytest.mark.skipif(
             condition=not os.path.exists(
-                "/usr/local/mfe/ml_data_dump/TMDB/scratch/82878_tars_input.nc"
+                os.path.join(PACKAGE_ROOT, "tests", "test_data", "82878_tars_input.nc")
             ),
             reason="Test requires TCV data which is not open source",
         )
@@ -299,9 +304,32 @@ class TestCocos:
                 f"Expected COCOS {expected_cocos} for TCV, got {cocos}"
             )
 
-    class TestConvertCocos:
-        _TCV_FILE = "/usr/local/mfe/ml_data_dump/TMDB/scratch/82878_tars_input.nc"
+        @pytest.mark.skipif(
+            condition=not os.path.exists(
+                os.path.join(PACKAGE_ROOT, "tests", "test_data", "82878_tars_input.nc")
+            ),
+            reason="Test requires TCV data which is not open source",
+        )
+        def test_detect_cocos_tcv_consistent(self):
+            """Ensure the detected COCOS is the same for every valid equilibrium timeslice of the TCV data"""
 
+            ds_input_path = os.path.join(
+                PACKAGE_ROOT, "tests", "test_data", "82878_tars_input.nc"
+            )
+            
+            ds = xr.open_dataset(ds_input_path, engine="h5netcdf")
+            prev_cocos = None
+            for time_idx in ds.time_idx:
+                ds_eq = ds.sel(time_idx=time_idx).isel(frequency_idx=0)
+                eqdsk = TestCocos.xr_to_eqdsk(ds_eq)
+                cocos = detect_cocos(eqdsk)
+                if prev_cocos is not None:
+                    assert cocos == prev_cocos, (
+                        f"Expected consistent COCOS across timeslices, got {cocos} and {prev_cocos}"
+                    )
+                prev_cocos = cocos
+
+    class TestConvertCocos:
         @pytest.fixture
         def eqdsk(self, request):
             return request.getfixturevalue(request.param)
@@ -315,7 +343,7 @@ class TestCocos:
                     "eqdsk_tcv",
                     marks=pytest.mark.skipif(
                         condition=not os.path.exists(
-                            "/usr/local/mfe/ml_data_dump/TMDB/scratch/82878_tars_input.nc"
+                            os.path.join(PACKAGE_ROOT, "tests", "test_data", "82878_tars_input.nc")
                         ),
                         reason="Test requires TCV data which is not open source",
                     ),
@@ -357,7 +385,7 @@ class TestCocos:
                     "eqdsk_tcv",
                     marks=pytest.mark.skipif(
                         condition=not os.path.exists(
-                            "/usr/local/mfe/ml_data_dump/TMDB/scratch/82878_tars_input.nc"
+                            os.path.join(PACKAGE_ROOT, "tests", "test_data", "82878_tars_input.nc")
                         ),
                         reason="Test requires TCV data which is not open source",
                     ),
@@ -409,7 +437,7 @@ class TestCocos:
                     "eqdsk_tcv",
                     marks=pytest.mark.skipif(
                         condition=not os.path.exists(
-                            "/usr/local/mfe/ml_data_dump/TMDB/scratch/82878_tars_input.nc"
+                            os.path.join(PACKAGE_ROOT, "tests", "test_data", "82878_tars_input.nc")
                         ),
                         reason="Test requires TCV data which is not open source",
                     ),
