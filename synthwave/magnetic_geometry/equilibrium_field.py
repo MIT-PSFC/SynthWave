@@ -42,8 +42,8 @@ def biot_savart_cylindrical(
     return B_cylindrical
 
 
-def detect_cocos(eqdsk: GEQDSKFile):
-    """Detect the COCOS of a given GEQDSK file
+def detect_cocos(eqdsk: GEQDSKFile) -> int | None:
+    """Detect the COCOS of a given GEQDSK file, or None if it cannot be determined.
     See `Sauter et al, 2013 <https://doi.org/10.1016/j.cpc.2012.09.010>`_.
     Also https://crppwww.epfl.ch/~sauter/cocos/ and https://crppwww.epfl.ch/~sauter/cocos/Sauter_COORD_CONVENTIONS_COCOS_2012_updated_after_reprint_for_Appendices_and_refs.pdf
 
@@ -59,9 +59,34 @@ def detect_cocos(eqdsk: GEQDSKFile):
     Sauter criterion. For sign_RphiZ=-1 codes, sign(B0) gives consistent results when B0
     has its physical sign.
     """
+    # Initial checks to ensure the present timeslice has a decent equilibrium
+
+    # If psi range is too small, pprime/ffprime profiles are flat
+    # and the e_Bp check won't be consistent
+    if np.abs(eqdsk.sibdry - eqdsk.simagx) < 0.01:
+        logger.warning("sibdry and simagx are very close, unable to determine COCOS")
+        return None
+
+    # Startup slices can have sibdry outside the range of psi values,
+    # these don't really make sense to run on since the equilibrium is not well-formed, so just skip them.
+    psi_increasing = float(np.sign(eqdsk.sibdry - eqdsk.simagx))
+    if psi_increasing > 0:
+        if eqdsk.sibdry > np.max(eqdsk.psi):
+            logger.warning(
+                "sibdry > max(psi) with increasing psi from axis to boundary, unable to determine COCOS"
+            )
+            return None
+        # simagx < min(psi) is allowed
+    else:
+        if eqdsk.sibdry < np.min(eqdsk.psi):
+            logger.warning(
+                "sibdry < min(psi) with decreasing psi from axis to boundary, unable to determine COCOS"
+            )
+            return None
+        # simagx > max(psi) is allowed
+
     sign_Ip = np.sign(float(eqdsk.cpasma))
     sign_B0 = np.sign(float(eqdsk.bcentr))
-    psi_increasing = float(np.sign(eqdsk.sibdry - eqdsk.simagx))
     # From table III: sign(dpsi) = sign_Bp * sign_Ip
     sign_Bp = int(psi_increasing * sign_Ip)
 
@@ -114,11 +139,19 @@ def detect_cocos(eqdsk: GEQDSKFile):
         sl = np.s_[3:-3, 3:-3]
         lhs_flat = lhs_gs[sl].ravel()
         rhs_flat = rhs_gs[sl].ravel()
-        mask = np.abs(rhs_flat) > 1e-6 * np.max(np.abs(rhs_flat))
-        alpha = np.dot(lhs_flat[mask], rhs_flat[mask]) / np.dot(
-            rhs_flat[mask], rhs_flat[mask]
-        )
-        e_Bp = 0 if abs(alpha - 1.0) < abs(alpha - (2 * np.pi) ** 2) else 1
+        rhs_max = np.max(np.abs(rhs_flat))
+        if rhs_max == 0:
+            return 0
+        mask = np.abs(rhs_flat) > 1e-6 * rhs_max
+        lhs_abs = np.abs(lhs_flat[mask])
+        rhs_abs = np.abs(rhs_flat[mask])
+        # Use the point that jointly maximizes |lhs| * |rhs| to get the ratio.
+        # This biases toward the inner-plasma region where both are large and the
+        # GS equation is best satisfied, avoiding boundary/X-point artifacts.
+        # Threshold at the geometric mean of 1 and (2*pi)^2, which is 2*pi.
+        idx = np.argmax(lhs_abs * rhs_abs)
+        alpha = lhs_abs[idx] / rhs_abs[idx]
+        e_Bp = 0 if alpha < 2 * np.pi else 1
 
         return e_Bp
 
@@ -188,6 +221,11 @@ def convert_cocos(
 
     if cocos_input is None:
         cocos_input = detect_cocos(eqdsk)
+        if cocos_input is None:
+            raise ValueError(
+                "Could not determine COCOS for the given GEQDSK."
+                "Either specify a cocos_input or filter out timeslices where COCOS cannot be determined (e.g. startup slices)"
+            )
 
     if cocos_input == cocos_target:
         logger.debug("No conversion needed, already in COCOS %d" % cocos_target)

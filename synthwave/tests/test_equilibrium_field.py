@@ -211,15 +211,15 @@ class TestCocos:
             rcentr=float(ds_eq["rgrid"][nx // 2]),
             rleft=float(ds_eq["rgrid"][0]),
             zmid=float(ds_eq["zgrid"][ny // 2]),
-            rmagx=float(ds_eq["rmaxis"]),
-            zmagx=float(ds_eq["zmaxis"]),
-            simagx=float(ds_eq["ssimag"]),
-            sibdry=float(ds_eq["ssibry"]),
+            rmagx=float(ds_eq["rmagx"]),
+            zmagx=float(ds_eq["zmagx"]),
+            simagx=float(ds_eq["simagx"]),
+            sibdry=float(ds_eq["sibdry"]),
             bcentr=float(ds_eq["bcentr"]),
             cpasma=float(ds_eq["cpasma"]),
             fpol=_resample_to_nx(ds_eq["fpol"].values),
             pres=_resample_to_nx(ds_eq["pres"].values),
-            ffprime=_resample_to_nx(ds_eq["ffprim"].values),
+            ffprime=_resample_to_nx(ds_eq["ffprime"].values),
             pprime=_resample_to_nx(ds_eq["pprime"].values),
             psi=ds_eq["psirz"].values,
             qpsi=_resample_to_nx(ds_eq["qpsi"].values),
@@ -328,6 +328,8 @@ class TestCocos:
                 ds_eq = ds.sel(time_idx=time_idx)
                 eqdsk = TestCocos.xr_to_eqdsk(ds_eq)
                 cocos = detect_cocos(eqdsk)
+                if cocos is None:
+                    continue  # skip timeslices where COCOS cannot be determined (e.g. due to bad data or indeterminate cases)
                 if prev_cocos is not None:
                     assert cocos == prev_cocos, (
                         f"Expected consistent COCOS across timeslices, got {cocos} and {prev_cocos}"
