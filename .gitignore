@@ -219,6 +219,7 @@ synthwave/tests/figures/*.png
 synthwave/tests/figures/**/*.png
 synthwave/tests/**/*.h5
 synthwave/tests/**/*.save
+synthwave/tests/**/*.nc
 
 # Examples
 examples/freq_response/

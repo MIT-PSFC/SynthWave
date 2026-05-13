@@ -346,6 +346,9 @@ class EquilibriumFilamentTracer(FilamentTracer):
         n_local = ratio.denominator
         psi_q = self.eq_field.get_psi_of_q(np.abs(m_local / n_local))
 
+        sign_Ip = int(np.sign(float(self.eq_field.eqdsk.cpasma)))
+        sign_Bt = int(np.sign(float(self.eq_field.F(psi_q))))
+
         filament_etas = np.linspace(0, 2 * np.pi, num_points)
         poloidal_points = np.zeros((num_points, 3))  # R, Z, a
 
@@ -365,9 +368,13 @@ class EquilibriumFilamentTracer(FilamentTracer):
             R = self.eq_field.eqdsk.rmagx + (a * np.cos(eta))
             return R
 
-        # Currently: +m/+n helicity matches empirical C-Mod pickup
+        # Z direction: Bz at outboard midplane in COCOS 1 is -sign_Ip * |Bp|.
+        # For field-parallel tracing (helicity_sign=+1) Z follows sign(Bz) = -sign_Ip
+        # for antiparallel (helicity_sign=-1) it reverses.
         def _Z_a(eta, a):
-            Z = self.eq_field.eqdsk.zmagx + (self.helicity_sign) * (a * np.sin(eta))
+            Z = self.eq_field.eqdsk.zmagx + (-sign_Ip * self.helicity_sign) * (
+                a * np.sin(eta)
+            )
             return Z
 
         def psi_prime_a(eta, a):
@@ -375,7 +382,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
             R = _R_a(eta, a)
             Z = _Z_a(eta, a)
             return self.eq_field.psi.ev(R, Z, dx=1, dy=0) * np.cos(eta) + (
-                self.helicity_sign
+                -sign_Ip * self.helicity_sign
             ) * self.eq_field.psi.ev(R, Z, dx=0, dy=1) * np.sin(eta)
 
         for i, eta in enumerate(filament_etas):
@@ -397,10 +404,6 @@ class EquilibriumFilamentTracer(FilamentTracer):
                 tol=1e-3,
             )
             poloidal_points[i, :] = [_R_a(eta, a_next), _Z_a(eta, a_next), a_next]
-
-        def _d_phi(r, R, Bp, Bt, d_eta):
-            # https://wiki.fusion.ciemat.es/wiki/Rotational_transform
-            return (Bt * r * d_eta) / (R * Bp)
 
         # alternative form removing the assumption that dl = r d_eta (that assumption holds only for circular cross-sections)
         def _d_phi_dl(dl, R, Bp, Bt):
@@ -448,12 +451,10 @@ class EquilibriumFilamentTracer(FilamentTracer):
                 d_phi_avg = (d_phi + np.roll(d_phi, -1)) / 2
                 phi = np.cumsum(d_phi_avg) - d_phi_avg[0]
 
-            # Numerical correction to ensure final point is at the proper angle
-
-            # Sign flip necessary to account for helicity direction so known_phi_end matches the sign of the traced phi values
-            # Note: The improved d_phi method should ensure this is always correct now [e.g. the correction factor is no longer strictly necessary]
-            # TODO(ZanderKeith) the improved d_phi method is most certainly not always correct, discuss with Rian
-            known_phi_end = self.helicity_sign * 2 * np.pi * m_local / n_local
+            # Numerical correction to ensure final point is at the proper angle.
+            # sign_Bt carries the direction of the toroidal field; helicity_sign
+            # carries whether we trace parallel (+1) or antiparallel (-1) to the field.
+            known_phi_end = self.helicity_sign * sign_Bt * 2 * np.pi * m_local / n_local
 
             # If actual phi significantly deviates from known phis, log a critical warning
             if not np.isclose(phi[-1], known_phi_end, atol=0.5):

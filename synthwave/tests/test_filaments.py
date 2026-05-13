@@ -1,3 +1,4 @@
+import copy
 import os
 from fractions import Fraction
 
@@ -16,6 +17,13 @@ from synthwave.magnetic_geometry.filaments import (
 )
 
 FIG_DIR = os.path.join(PACKAGE_ROOT, "tests", "figures")
+_CMOD_EQDSK_FILE = os.path.join(PACKAGE_ROOT, "input_data", "cmod", "g1051202011.1000")
+
+
+@pytest.fixture(scope="module")
+def cmod_eqdsk():
+    with open(_CMOD_EQDSK_FILE, "r") as f:
+        return freeqdsk.geqdsk.read(f)
 
 
 class TestToroidalFilamentTracer:
@@ -305,9 +313,9 @@ class TestToroidalFilamentTracer:
             ratio = tick / np.pi
             frac = Fraction(int(ratio * 2), 2).limit_denominator()
             if frac.denominator == 1:
-                x_labels.append(f"${frac.numerator}\pi$")
+                x_labels.append(rf"${frac.numerator}\pi$")
             else:
-                x_labels.append(f"${frac.numerator}\pi/{frac.denominator}$")
+                x_labels.append(rf"${frac.numerator}\pi/{frac.denominator}$")
 
         # Plot real component of current
         scatter1 = ax1.scatter(
@@ -370,6 +378,7 @@ class TestToroidalFilamentTracer:
                 r"$2\pi$",
             ]
         )
+        ax1.invert_yaxis()
 
         cbar1 = plt.colorbar(scatter1, ax=ax1)
         cbar1.set_label("Re(I)")
@@ -435,6 +444,7 @@ class TestToroidalFilamentTracer:
                 r"$2\pi$",
             ]
         )
+        ax2.invert_yaxis()
 
         cbar2 = plt.colorbar(scatter2, ax=ax2)
         cbar2.set_label("Im(I)")
@@ -550,16 +560,13 @@ class TestEquilibriumFilamentTracer:
     """Test the EquilibriumFilamentTracer class."""
 
     fig_dir = os.path.join(FIG_DIR, "test_equilibrium_filament_tracer")
-    eqdsk_file = os.path.join(PACKAGE_ROOT, "input_data", "cmod", "g1051202011.1000")
-    with open(eqdsk_file, "r") as f:
-        eqdsk = freeqdsk.geqdsk.read(f)
 
     @pytest.mark.parametrize("scale_points", [True, False])
     @pytest.mark.parametrize("prevent_synthetic_structure", [True, False])
-    def test_init(self, scale_points, prevent_synthetic_structure):
+    def test_init(self, cmod_eqdsk, scale_points, prevent_synthetic_structure):
         """Test initialization of EquilibriumFilamentTracer."""
 
-        eq_field = EquilibriumField(self.eqdsk)
+        eq_field = EquilibriumField(cmod_eqdsk)
 
         m, n = 2, 1
         base_num_points = 100
@@ -586,9 +593,9 @@ class TestEquilibriumFilamentTracer:
 
     @pytest.mark.parametrize("scale_points", [True, False])
     @pytest.mark.parametrize("prevent_synthetic_structure", [True, False])
-    def test_trace_basic(self, scale_points, prevent_synthetic_structure):
+    def test_trace_basic(self, cmod_eqdsk, scale_points, prevent_synthetic_structure):
         """Test basic tracing functionality."""
-        eq_field = EquilibriumField(self.eqdsk)
+        eq_field = EquilibriumField(cmod_eqdsk)
 
         m, n = 2, 1
         base_num_points = 100
@@ -626,10 +633,10 @@ class TestEquilibriumFilamentTracer:
             {"m": -3, "n": 2},
         ],
     )
-    def test_points_and_currents(self, mode):
+    def test_points_and_currents(self, cmod_eqdsk, mode):
         """Test get_filament_ds method for correct output dataset."""
 
-        eq_field = EquilibriumField(self.eqdsk)
+        eq_field = EquilibriumField(cmod_eqdsk)
         num_filaments = 23
 
         fig_dir = os.path.join(self.fig_dir, "test_points_and_currents")
@@ -671,14 +678,14 @@ class TestEquilibriumFilamentTracer:
             frac = Fraction(int(ratio * 2), 2).limit_denominator()
             if frac.denominator == 1:
                 if frac.numerator > 0:
-                    x_labels.append(f"${frac.numerator}\pi$")
+                    x_labels.append(rf"${frac.numerator}\pi$")
                 else:
-                    x_labels.append(f"${frac.numerator}\pi$")
+                    x_labels.append(rf"${frac.numerator}\pi$")
             else:
                 if frac.numerator > 0:
-                    x_labels.append(f"${frac.numerator}\pi/{frac.denominator}$")
+                    x_labels.append(rf"${frac.numerator}\pi/{frac.denominator}$")
                 else:
-                    x_labels.append(f"$-{abs(frac.numerator)}\pi/{frac.denominator}$")
+                    x_labels.append(rf"$-{abs(frac.numerator)}\pi/{frac.denominator}$")
 
         # Plot real component of current
         scatter1 = ax1.scatter(
@@ -741,6 +748,7 @@ class TestEquilibriumFilamentTracer:
                 r"$2\pi$",
             ]
         )
+        ax1.invert_yaxis()
 
         cbar1 = plt.colorbar(scatter1, ax=ax1)
         cbar1.set_label("Re(I)")
@@ -806,6 +814,7 @@ class TestEquilibriumFilamentTracer:
                 r"$2\pi$",
             ]
         )
+        ax2.invert_yaxis()
 
         cbar2 = plt.colorbar(scatter2, ax=ax2)
         cbar2.set_label("Im(I)")
@@ -834,10 +843,10 @@ class TestEquilibriumFilamentTracer:
     @pytest.mark.parametrize(
         "mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": 3, "n": 1}, {"m": 4, "n": 3}]
     )
-    def test_points_and_currents_3d(self, mode):
+    def test_points_and_currents_3d(self, cmod_eqdsk, mode):
         """Test get_filament_ds method and create 3D visualization of filament traces."""
 
-        eq_field = EquilibriumField(self.eqdsk)
+        eq_field = EquilibriumField(cmod_eqdsk)
         num_filaments = 7  # Prime: coprime with any n_local
 
         fig_dir = os.path.join(self.fig_dir, "test_points_and_currents_3d")
@@ -915,6 +924,58 @@ class TestEquilibriumFilamentTracer:
         assert filament_ds["y"].shape == (num_filaments, equilibrium_tracer.num_points)
         assert filament_ds["z"].shape == (num_filaments, equilibrium_tracer.num_points)
 
+    @pytest.mark.parametrize(
+        "mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": 3, "n": 1}, {"m": 4, "n": 3}]
+    )
+    @pytest.mark.parametrize("helicity", [("positive", 1), ("negative", -1)])
+    @pytest.mark.parametrize("current_sign", [("positive", 1), ("negative", -1)])
+    def test_trace_satisfies_cocos(self, cmod_eqdsk, mode, helicity, current_sign):
+        """Test basic tracing functionality."""
+        eqdsk = copy.deepcopy(cmod_eqdsk)
+        if current_sign[0] == "positive":
+            # C-Mod equilibrium with COCOS 1 has negative current, so flip sign to get positive current case
+            eqdsk.cpasma = -eqdsk.cpasma
+        eq_field = EquilibriumField(eqdsk)
+
+        base_num_points = 100
+        tracer = EquilibriumFilamentTracer(
+            mode["m"] * helicity[1],
+            mode["n"],
+            eq_field,
+            base_num_points=base_num_points,
+            scale_points=False,
+        )
+        points, _etas = tracer.trace()
+        sign_dphi = np.sign(points[1, 1] - points[0, 1])
+        sign_dZ = np.sign(points[1, 2] - points[0, 2])
+
+        sign_Ip = current_sign[1]
+        # Sign Ip positive -> Bp points in -Z
+        # Sign Ip negative -> Bp points in +Z
+        if sign_Ip > 0:
+            sign_dZ_expected = -1
+        elif sign_Ip < 0:
+            sign_dZ_expected = 1
+        else:
+            raise ValueError(
+                "Unexpected zero current case, should be either positive or negative"
+            )
+
+        # Always assuming sign_B0 is negative for this eqdsk (typical of C-Mod to run in negative B0)
+        sign_dphi_expected = -1
+
+        # With negative helicity, trace is antiparallel to field line, so flip expected signs
+        if helicity[0] == "negative":
+            sign_dphi_expected *= -1
+            sign_dZ_expected *= -1
+
+        assert sign_dphi == sign_dphi_expected, (
+            f"Unexpected sign of dphi: got {sign_dphi}, expected {sign_dphi_expected}"
+        )
+        assert sign_dZ == sign_dZ_expected, (
+            f"Unexpected sign of dZ: got {sign_dZ}, expected {sign_dZ_expected}"
+        )
+
 
 class TestAllFilamentTracers:
     """Test common functionality for all filament tracers."""
@@ -922,23 +983,27 @@ class TestAllFilamentTracers:
     fig_dir = os.path.join(FIG_DIR, "test_all_filament_tracers")
 
     @pytest.mark.parametrize(
-        "tracer_class, tracer_args",
+        "tracer_class, extra_args",
         [
             (ToroidalFilamentTracer, (1.8, 0.0, 0.5, 400)),
-            (
-                EquilibriumFilamentTracer,
-                (EquilibriumField(TestEquilibriumFilamentTracer.eqdsk), 400),
-            ),
+            (EquilibriumFilamentTracer, (400,)),
         ],
     )
     @pytest.mark.parametrize(
         "mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": -3, "n": 2}]
     )
     def test_closest_point_has_same_current(
-        self, tracer_class: FilamentTracer, tracer_args, mode
+        self, cmod_eqdsk, tracer_class: FilamentTracer, extra_args, mode
     ):
         """For every point, ensure its nearest neighbor has the same current and belongs to the same filament"""
-        tracer_args = (mode["m"], mode["n"]) + tracer_args
+        if tracer_class is EquilibriumFilamentTracer:
+            tracer_args = (
+                mode["m"],
+                mode["n"],
+                EquilibriumField(cmod_eqdsk),
+            ) + extra_args
+        else:
+            tracer_args = (mode["m"], mode["n"]) + extra_args
         tracer = tracer_class(*tracer_args)
         filament_ds = tracer.get_filament_ds(
             num_filaments=7, coordinate_system="cartesian"
@@ -981,31 +1046,33 @@ class TestAllFilamentTracers:
         )
 
     @pytest.mark.parametrize(
-        "tracer_class, tracer_args",
+        "tracer_class, extra_args",
         [
             (ToroidalFilamentTracer, (1.8, 0.0, 0.5, 400)),
-            (
-                EquilibriumFilamentTracer,
-                (EquilibriumField(TestEquilibriumFilamentTracer.eqdsk), 400),
-            ),
+            (EquilibriumFilamentTracer, (400,)),
         ],
     )
     @pytest.mark.parametrize("mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}])
     def test_helicity_maintains_shape(
-        self, tracer_class: FilamentTracer, tracer_args, mode
+        self, cmod_eqdsk, tracer_class: FilamentTracer, extra_args, mode
     ):
         """For each filament tracer, ensure the maximum extents in R and Z space is maintained
         for positive and negative helicity.
 
         Must ensure the tracer isn't accidentally being shifted up / down in Z when the sign is flipped.
         """
-        tracer_args_pos = (mode["m"], mode["n"]) + tracer_args
+        if tracer_class is EquilibriumFilamentTracer:
+            eq_field = EquilibriumField(cmod_eqdsk)
+            tracer_args_pos = (mode["m"], mode["n"], eq_field) + extra_args
+            tracer_args_neg = (-mode["m"], mode["n"], eq_field) + extra_args
+        else:
+            tracer_args_pos = (mode["m"], mode["n"]) + extra_args
+            tracer_args_neg = (-mode["m"], mode["n"]) + extra_args
         tracer_pos = tracer_class(*tracer_args_pos)
         filament_pos_ds = tracer_pos.get_filament_ds(
             num_filaments=7, coordinate_system="cylindrical"
         )
 
-        tracer_args_neg = (-mode["m"], mode["n"]) + tracer_args
         tracer_neg = tracer_class(*tracer_args_neg)
         filament_neg_ds = tracer_neg.get_filament_ds(
             num_filaments=7, coordinate_system="cylindrical"
@@ -1034,10 +1101,6 @@ class TestAllFilamentTracers:
 
 class TestNegativeMFilament:
     """Tests specifically for negative m handling."""
-
-    eqdsk_file = os.path.join(PACKAGE_ROOT, "input_data", "cmod", "g1051202011.1000")
-    with open(eqdsk_file, "r") as f:
-        eqdsk = freeqdsk.geqdsk.read(f)
 
     @pytest.mark.parametrize(
         "base_num_points, scale_points, prevent_synthetic_structure",
@@ -1094,12 +1157,9 @@ class TestNegativeMFilament:
             atol=1e-10,
         )
 
-    @pytest.mark.xfail(
-        reason="Helicity sign is presently not treated well, will fix in COCOS PR"
-    )
-    def test_helicity_sign_mirrors_z_coordinates(self):
+    def test_helicity_sign_mirrors_z_coordinates(self, cmod_eqdsk):
         """EquilibriumFilamentTracer with helicity_sign=+1 vs -1 must produce Z-mirrored traces."""
-        eq_field = EquilibriumField(self.eqdsk)
+        eq_field = EquilibriumField(cmod_eqdsk)
         m, n = 3, 2
 
         tracer_pos = EquilibriumFilamentTracer(
@@ -1127,7 +1187,8 @@ class TestNegativeMFilament:
         # Z displacement about the magnetic axis should be negated between the two tracers.
         # Tolerance is loose because the equilibrium is not perfectly up-down symmetric,
         # so a_pos(eta) != a_neg(eta) and the mirror is approximate.
-        # Similarly, R is not necessarily equal for a non-up-down-symmetric equilibrium.
+        # Similarly, R is not necessarily equal for a non-up-down-symmetric equilibrium,
+        # because the dphi/deta may differ based on the exact path taken
         zmagx = eq_field.eqdsk.zmagx
         np.testing.assert_allclose(
             pts_pos[:, 2] - zmagx,
