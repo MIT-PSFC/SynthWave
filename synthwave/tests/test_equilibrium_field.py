@@ -15,11 +15,25 @@ from synthwave.magnetic_geometry.equilibrium_field import (
     detect_cocos,
 )
 
+_CMOD_EQDSK_FILE = os.path.join(PACKAGE_ROOT, "input_data", "cmod", "g1051202011.1000")
+
+_D3D_EQDSK_FILE = os.path.join(
+    PACKAGE_ROOT,
+    "..",
+    "submodules",
+    "OpenFUSIONToolkit",
+    "examples",
+    "TokaMaker",
+    "DIIID",
+    "g192185.02440",
+)
+
 
 @pytest.fixture(scope="module")
 def eqdsk():
-    eqdsk_file = os.path.join(PACKAGE_ROOT, "input_data", "cmod", "g1051202011.1000")
-    with open(eqdsk_file, "r") as f:
+    if not os.path.exists(_CMOD_EQDSK_FILE):
+        pytest.skip(f"Missing required C-Mod EQDSK file: {_CMOD_EQDSK_FILE}")
+    with open(_CMOD_EQDSK_FILE, "r") as f:
         return freeqdsk.geqdsk.read(f)
 
 
@@ -146,25 +160,16 @@ class TestCocos:
     @pytest.fixture(scope="class")
     def eqdsk_cmod(self):
         """Get the C-Mod eqdsk"""
-        eqdsk_file = os.path.join(
-            PACKAGE_ROOT, "input_data", "cmod", "g1051202011.1000"
-        )
-        with open(eqdsk_file, "r") as f:
+        if not os.path.exists(_CMOD_EQDSK_FILE):
+            pytest.skip(f"Missing required C-Mod EQDSK file: {_CMOD_EQDSK_FILE}")
+        with open(_CMOD_EQDSK_FILE, "r") as f:
             return freeqdsk.geqdsk.read(f)
 
     @pytest.fixture(scope="class")
     def eqdsk_d3d(self):
-        eqdsk_file = os.path.join(
-            PACKAGE_ROOT,
-            "..",
-            "submodules",
-            "OpenFUSIONToolkit",
-            "examples",
-            "TokaMaker",
-            "DIIID",
-            "g192185.02440",
-        )
-        with open(eqdsk_file, "r") as f:
+        if not os.path.exists(_D3D_EQDSK_FILE):
+            pytest.skip(f"Missing required DIII-D EQDSK file: {_D3D_EQDSK_FILE}")
+        with open(_D3D_EQDSK_FILE, "r") as f:
             eqdsk = freeqdsk.geqdsk.read(f)
 
         return eqdsk
