@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Cache OFT
+        uses: actions/cache@v4
+        with:
+          path: submodules/OpenFUSIONToolkit
+          key: oft-v1.0.0-beta6-ubuntu-22.04
+
+      - name: Install
+        run: ./install.sh
+
+      - name: Ruff format check
+        run: uv run ruff format --check synthwave/
+
+      - name: Ruff lint
+        run: uv run ruff check synthwave/
+
+      - name: Isort
+        run: uv run isort synthwave/
+
+  test:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        test-file:
+          - test_utils.py
+          - test_equilibrium_field.py
+          - test_filaments.py
+    name: test (${{ matrix.test-file }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Cache OFT
+        uses: actions/cache@v4
+        with:
+          path: submodules/OpenFUSIONToolkit
+          key: oft-v1.0.0-beta6-ubuntu-22.04
+
+      - name: Install
+        run: ./install.sh
+
+      - name: Run tests
+        run: uv run pytest synthwave/tests/${{ matrix.test-file }}
+
+  test-thincurr-other:
+    runs-on: ubuntu-22.04
+    name: test (test_thincurr.py - other)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Cache OFT
+        uses: actions/cache@v4
+        with:
+          path: submodules/OpenFUSIONToolkit
+          key: oft-v1.0.0-beta6-ubuntu-22.04
+
+      - name: Install
+        run: ./install.sh
+
+      - name: Run tests
+        run: uv run pytest synthwave/tests/test_thincurr.py --deselect synthwave/tests/test_thincurr.py::test_toroidal_angles
+
+  test-thincurr-toroidal-angles:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        mode: ["m2n1", "m3n2", "m-3n2", "m3n1", "m4n3"]
+    name: test (test_toroidal_angles[${{ matrix.mode }}])
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Cache OFT
+        uses: actions/cache@v4
+        with:
+          path: submodules/OpenFUSIONToolkit
+          key: oft-v1.0.0-beta6-ubuntu-22.04
+
+      - name: Install
+        run: ./install.sh
+
+      - name: Run tests
+        run: uv run pytest "synthwave/tests/test_thincurr.py::test_toroidal_angles[${{ matrix.mode }}]"
+
+  notebooks:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Cache OFT
+        uses: actions/cache@v4
+        with:
+          path: submodules/OpenFUSIONToolkit
+          key: oft-v1.0.0-beta6-ubuntu-22.04
+
+      - name: Install
+        run: ./install.sh
+
+      - name: Run notebooks
+        run: uv run pytest --nbmake examples/

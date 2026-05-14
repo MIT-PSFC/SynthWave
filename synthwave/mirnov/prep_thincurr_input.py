@@ -2,12 +2,11 @@
 # -*- coding: utf-8 -*-
 
 import os
-import numpy as np
-import xarray as xr
-
 from typing import Optional
 
-
+import numpy as np
+import xarray as xr
+from loguru import logger
 from OpenFUSIONToolkit.ThinCurr.sensor import Mirnov, save_sensors
 
 
@@ -35,8 +34,7 @@ def gen_OFT_filament_and_eta_file(
     with open(filament_file, "w+") as f:
         f.write(f"<oft>\n\t<thincurr>\n\t<eta>{resistivity_str}</eta>\n\t<icoils>\n")
 
-        if debug:
-            print(f"File open for writing: {filament_file}")
+        logger.debug(f"File open for writing: {filament_file}")
 
         for filament in filament_list:
             # All coils in a coil set share the same current waveform,
@@ -52,8 +50,7 @@ def gen_OFT_filament_and_eta_file(
             f.write("\t</coil_set>\n")
         f.write("\t</icoils>\n\t</thincurr>\n</oft>")
 
-    if debug:
-        print("Wrote OFT filament file to %s" % filament_file)
+    logger.debug(f"Wrote OFT filament file to {filament_file}")
 
 
 def gen_OFT_sensors_file(
@@ -77,24 +74,24 @@ def gen_OFT_sensors_file(
     # Assume sensor_details is an xarray dataset with the following variables:
     # X, Y, Z (coordinates of each sensor)
     # theta, phi (orientation of each sensor)
+    # sensor_name (name of each sensor)
+    # Dimension is "sensor_idx"
 
     sensor_list = []
-    for sensor in sensor_details.sensor.values:
+    for sensor_idx in sensor_details.sensor_idx.values:
         # Get sensor position and normal vector
-        pt = sensor_details.position.sel(sensor=sensor).values
+        pt = sensor_details.position.sel(sensor_idx=sensor_idx).values
 
         # normal vector does not currently account for toroidal tilt
-        norm = sensor_details.normal.sel(sensor=sensor).values
+        norm = sensor_details.normal.sel(sensor_idx=sensor_idx).values
 
         # sensor radius
-        dx = sensor_details.radius.sel(sensor=sensor).item()
+        dx = sensor_details.radius.sel(sensor_idx=sensor_idx).item()
 
-        # verify that "sensor" is the sensor name, not the sensor index
-        sensor_name = (
-            sensor
-            if isinstance(sensor, str)
-            else sensor_details.sensor_name.sel(sensor=sensor).item()
-        )
+        if "sensor_name" in sensor_details:
+            sensor_name = sensor_details.sensor_name.sel(sensor_idx=sensor_idx).item()
+        else:
+            sensor_name = str(sensor_idx)
 
         # create Mirnov object
         sensor_list.append(Mirnov(pt, norm, sensor_name, dx))
@@ -109,6 +106,5 @@ def gen_OFT_sensors_file(
         sensor_list,
         sensor_file_path,
     )
-    if debug:
-        print(f"Wrote OFT sensor file to {sensor_file_path}")
+    logger.debug(f"Wrote OFT sensor file to {sensor_file_path}")
     return sensor_file_path

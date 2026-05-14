@@ -208,6 +208,7 @@ __marimo__/
 
 # VSCode
 .vscode/
+CLAUDE.md
 
 # Install
 submodules/OpenFUSIONToolkit
@@ -216,8 +217,15 @@ setup_env.sh
 # Tests
 synthwave/tests/figures/*.png
 synthwave/tests/figures/**/*.png
+synthwave/tests/**/*.h5
+synthwave/tests/**/*.save
+synthwave/tests/**/*.nc
+
+# Examples
+examples/freq_response/
+examples/mesh_plot/
 
 # scratch
 thincurr_scratch/
-synthwave/input_data
+scratch/
 synthwave/vessel_caches

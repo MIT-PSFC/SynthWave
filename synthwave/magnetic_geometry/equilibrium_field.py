@@ -1,14 +1,13 @@
 import numpy as np
-
+from freeqdsk.geqdsk import GEQDSKFile
+from loguru import logger
 from scipy.constants import mu_0
 from scipy.interpolate import RectBivariateSpline, make_smoothing_spline
 from scipy.optimize import newton
-from freeqdsk.geqdsk import GEQDSKFile
-from loguru import logger
 
 from synthwave.magnetic_geometry.utils import (
-    cylindrical_to_cartesian,
     cartesian_to_cylindrical,
+    cylindrical_to_cartesian,
 )
 
 
@@ -43,40 +42,65 @@ def biot_savart_cylindrical(
     return B_cylindrical
 
 
-def convert_cocos(eqdsk: GEQDSKFile, target_cocos: int):
-    """Convert a GEQDSKFile from freeqdsk to the target COCOS
+def detect_cocos(eqdsk: GEQDSKFile) -> int | None:
+    """Detect the COCOS of a given GEQDSK file, or None if it cannot be determined.
     See `Sauter et al, 2013 <https://doi.org/10.1016/j.cpc.2012.09.010>`_.
     Also https://crppwww.epfl.ch/~sauter/cocos/ and https://crppwww.epfl.ch/~sauter/cocos/Sauter_COORD_CONVENTIONS_COCOS_2012_updated_after_reprint_for_Appendices_and_refs.pdf
 
-    Args:
-        eqdsk: GEQDSKFile object from freeqdsk
-        target_cocos: COCOS to convert to (1-8, 11-18)
+    COCOS is defined by the following:
+    - e_Bp: 0 if psi in Wb/rad, 1 if psi in Weber
+    - sign_Bp: sign of poloidal magnetic field (Bp)
+    - sign_RphiZ: +1 if (R, phi, Z), -1 if (R, Z, phi)
+    - sign_rhotp: +1 if (rho, theta, phi), -1 if (rho, phi, theta)
 
-    Returns:
-        A new GEQDSKFile object with the specified COCOS
+    sign_rhotp is derived from sign(Ip * B0) (discharge helicity) rather than sign(q),
+    because some codes store abs(q). From Sauter Table I: sign(q) = sign_Bp * sign_RphiZ * sign_rhotp.
+    For sign_RphiZ=+1 codes, sign(B0) = sign(q_physical), making this equivalent to the
+    Sauter criterion. For sign_RphiZ=-1 codes, sign(B0) gives consistent results when B0
+    has its physical sign.
     """
+    # Initial checks to ensure the present timeslice has a decent equilibrium
 
-    if target_cocos not in [1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 16, 17, 18]:
-        raise ValueError("Invalid target COCOS: %d" % target_cocos)
+    # If psi range is too small, pprime/ffprime profiles are flat
+    # and the e_Bp check won't be consistent
+    if np.abs(eqdsk.sibdry - eqdsk.simagx) < 0.01:
+        logger.warning("sibdry and simagx are very close, unable to determine COCOS")
+        return None
+
+    # Startup slices can have sibdry outside the range of psi values,
+    # these don't really make sense to run on since the equilibrium is not well-formed, so just skip them.
+    psi_increasing = float(np.sign(eqdsk.sibdry - eqdsk.simagx))
+    if psi_increasing > 0:
+        if eqdsk.sibdry > np.max(eqdsk.psi):
+            logger.warning(
+                "sibdry > max(psi) with increasing psi from axis to boundary, unable to determine COCOS"
+            )
+            return None
+        # simagx < min(psi) is allowed
+    else:
+        if eqdsk.sibdry < np.min(eqdsk.psi):
+            logger.warning(
+                "sibdry < min(psi) with decreasing psi from axis to boundary, unable to determine COCOS"
+            )
+            return None
+        # simagx > max(psi) is allowed
 
     sign_Ip = np.sign(float(eqdsk.cpasma))
     sign_B0 = np.sign(float(eqdsk.bcentr))
-    psi_increasing = float(np.sign(eqdsk.sibdry - eqdsk.simagx))
     # From table III: sign(dpsi) = sign_Bp * sign_Ip
     sign_Bp = int(psi_increasing * sign_Ip)
 
-    # sigma_RphiZ = +1 (R,phi,Z, phi CCW): F = R*B_phi has same sign as B0.
-    # sigma_RphiZ = -1 (R,Z,phi, phi CW): stored F has opposite sign to physical B0.
-    # When bcentr=0 (not stored), fall back to sign of fpol alone.
-    fpol_sign = int(np.sign(np.nanmean(eqdsk.fpol)))
+    # sign_RphiZ = +1 (R,phi,Z, phi CCW): F = R*B_phi has same sign as B0.
+    # sign_RphiZ = -1 (R,Z,phi, phi CW): stored F has opposite sign to physical B0.
+    # When bcentr=0 (not stored), assume standard sign_RphiZ=+1 (gEQDSK default).
+    sign_fpol = int(np.sign(np.nanmean(eqdsk.fpol)))
     if sign_B0 != 0:
-        sign_RphiZ = fpol_sign * int(sign_B0)
+        sign_RphiZ = sign_fpol * int(sign_B0)
     else:
-        sign_RphiZ = fpol_sign
-
-    # From Table III: sigma_q = sigma_rhotp * sigma_Bp * sigma_RphiZ
-    sign_q = float(np.sign(np.nanmean(eqdsk.qpsi)))
-    sign_rhotp = int(sign_q * sign_Bp * sign_RphiZ)
+        logger.warning(
+            "bcentr=0, unable to determine sign_RphiZ from F. Assuming +1 (gEQDSK default)."
+        )
+        sign_RphiZ = 1
 
     def _e_Bp(eqdsk):
         # Detect e_Bp via Grad-Shafranov residual.
@@ -115,17 +139,39 @@ def convert_cocos(eqdsk: GEQDSKFile, target_cocos: int):
         sl = np.s_[3:-3, 3:-3]
         lhs_flat = lhs_gs[sl].ravel()
         rhs_flat = rhs_gs[sl].ravel()
-        mask = np.abs(rhs_flat) > 1e-6 * np.max(np.abs(rhs_flat))
-        alpha = np.dot(lhs_flat[mask], rhs_flat[mask]) / np.dot(
-            rhs_flat[mask], rhs_flat[mask]
-        )
-        e_Bp = 0 if abs(alpha - 1.0) < abs(alpha - (2 * np.pi) ** 2) else 1
+        rhs_max = np.max(np.abs(rhs_flat))
+        if rhs_max == 0:
+            return 0
+        mask = np.abs(rhs_flat) > 1e-6 * rhs_max
+        lhs_abs = np.abs(lhs_flat[mask])
+        rhs_abs = np.abs(rhs_flat[mask])
+        # Use the point that jointly maximizes |lhs| * |rhs| to get the ratio.
+        # This biases toward the inner-plasma region where both are large and the
+        # GS equation is best satisfied, avoiding boundary/X-point artifacts.
+        # Threshold at the geometric mean of 1 and (2*pi)^2, which is 2*pi.
+        idx = np.argmax(lhs_abs * rhs_abs)
+        alpha = lhs_abs[idx] / rhs_abs[idx]
+        e_Bp = 0 if alpha < 2 * np.pi else 1
 
         return e_Bp
 
     e_Bp = _e_Bp(eqdsk)
 
+    # sign_rhotp is the discharge helicity: sign(Ip * B0).
+    # Using sign(q) is unreliable because some codes store abs(q).
+    # When bcentr=0, infer sign_B0 from fpol under the standard sign_RphiZ=+1 assumption:
+    # F = R*B_phi, so sign_fpol = sign_RphiZ * sign_B0 = sign_B0 when sign_RphiZ=+1.
+    if sign_B0 != 0:
+        sign_B0_eff = int(sign_B0)
+    else:
+        sign_B0_eff = int(sign_fpol)
+        logger.warning(
+            "bcentr=0, unable to determine sign_B0. Inferring sign_B0=%d from F under the standard sign_RphiZ=+1 assumption."
+        )
+    sign_rhotp = int(sign_Ip) * sign_B0_eff
+
     # From Table I
+    # (e_Bp, sign_Bp, sign_RphiZ, sign_rhotp) -> COCOS number
     cocos_lookup = {
         (0, +1, +1, +1): 1,
         (1, +1, +1, +1): 11,
@@ -151,26 +197,72 @@ def convert_cocos(eqdsk: GEQDSKFile, target_cocos: int):
             "Could not determine COCOS for the given GEQDSK. Please check the signs of Bp, RphiZ, and rhotp."
         )
 
-    if cocos_input == target_cocos:
-        logger.debug("No conversion needed, already in COCOS %d" % target_cocos)
+    return cocos_input
+
+
+def convert_cocos(
+    eqdsk: GEQDSKFile, cocos_target: int, cocos_input: int | None = None
+) -> GEQDSKFile:
+    """Convert a GEQDSKFile from freeqdsk to the target COCOS
+    See `Sauter et al, 2013 <https://doi.org/10.1016/j.cpc.2012.09.010>`_.
+    Also https://crppwww.epfl.ch/~sauter/cocos/ and https://crppwww.epfl.ch/~sauter/cocos/Sauter_COORD_CONVENTIONS_COCOS_2012_updated_after_reprint_for_Appendices_and_refs.pdf
+
+    Args:
+        eqdsk: GEQDSKFile object from freeqdsk
+        cocos_target: COCOS to convert to (1-8, 11-18)
+        cocos_input: COCOS of the input GEQDSKFile (if None, it will be determined automatically)
+
+    Returns:
+        A new GEQDSKFile object with the specified COCOS
+    """
+
+    if cocos_target not in [1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 16, 17, 18]:
+        raise ValueError("Invalid target COCOS: %d" % cocos_target)
+
+    if cocos_input is None:
+        cocos_input = detect_cocos(eqdsk)
+        if cocos_input is None:
+            raise ValueError(
+                "Could not determine COCOS for the given GEQDSK."
+                "Either specify a cocos_input or filter out timeslices where COCOS cannot be determined (e.g. startup slices)"
+            )
+
+    if cocos_input == cocos_target:
+        logger.debug("No conversion needed, already in COCOS %d" % cocos_target)
     else:
         logger.debug(
-            "Converting from COCOS %d to COCOS %d" % (cocos_input, target_cocos)
+            "Converting from COCOS %d to COCOS %d" % (cocos_input, cocos_target)
         )
 
-    # Inverse lookup: COCOS number -> (e_Bp, sigma_Bp, sigma_RphiZ, sigma_rhotp)
-    cocos_params = {v: k for k, v in cocos_lookup.items()}
-    e_Bp_i, sigma_Bp_i, sigma_RphiZ_i, sigma_rhotp_i = cocos_params[cocos_input]
-    e_Bp_o, sigma_Bp_o, sigma_RphiZ_o, sigma_rhotp_o = cocos_params[target_cocos]
+    # COCOS number -> (e_Bp, sign_Bp, sign_RphiZ, sign_rhotp)
+    cocos_params = {
+        1: (0, +1, +1, +1),
+        11: (1, +1, +1, +1),
+        2: (0, +1, -1, +1),
+        12: (1, +1, -1, +1),
+        3: (0, -1, +1, -1),
+        13: (1, -1, +1, -1),
+        4: (0, -1, -1, -1),
+        14: (1, -1, -1, -1),
+        5: (0, +1, +1, -1),
+        15: (1, +1, +1, -1),
+        6: (0, +1, -1, -1),
+        16: (1, +1, -1, -1),
+        7: (0, -1, +1, +1),
+        17: (1, -1, +1, +1),
+        8: (0, -1, -1, +1),
+        18: (1, -1, -1, +1),
+    }
+    e_Bp_i, sign_Bp_i, sign_RphiZ_i, sign_rhotp_i = cocos_params[cocos_input]
+    e_Bp_o, sign_Bp_o, sign_RphiZ_o, sign_rhotp_o = cocos_params[cocos_target]
 
     # Conversion factors from Sauter 2013, Table III
-    psi_factor = (sigma_Bp_o / sigma_Bp_i) * (2 * np.pi) ** (e_Bp_o - e_Bp_i)
-    F_factor = sigma_RphiZ_o / sigma_RphiZ_i
-    q_factor = (sigma_rhotp_o * sigma_Bp_o * sigma_RphiZ_o) / (
-        sigma_rhotp_i * sigma_Bp_i * sigma_RphiZ_i
-    )
+    psi_factor = (sign_Bp_o / sign_Bp_i) * (2 * np.pi) ** (e_Bp_o - e_Bp_i)
+    F_factor = sign_RphiZ_o / sign_RphiZ_i
     # pprime = dp/dpsi; ffprime = F*dF/dpsi -> both scale as 1/psi_factor
     # (F_factor^2 = 1 always, so the F sign cancels in ffprime)
+    # Some codes store abs(q), so just make sure the sign is consistent with the target
+    qpsi = np.abs(np.array(eqdsk.qpsi, dtype=float)) * sign_rhotp_o
 
     new_eqdsk = GEQDSKFile(
         # Unchanged
@@ -201,7 +293,7 @@ def convert_cocos(eqdsk: GEQDSKFile, target_cocos: int):
         fpol=np.array(eqdsk.fpol, dtype=float) * F_factor,
         ffprime=np.array(eqdsk.ffprime, dtype=float) / psi_factor,
         pprime=np.array(eqdsk.pprime, dtype=float) / psi_factor,
-        qpsi=np.array(eqdsk.qpsi, dtype=float) * q_factor,
+        qpsi=qpsi,
     )
 
     return new_eqdsk
@@ -209,6 +301,8 @@ def convert_cocos(eqdsk: GEQDSKFile, target_cocos: int):
 
 class EquilibriumField:
     def __init__(self, eqdsk, lam=1e-7):
+        eqdsk = convert_cocos(eqdsk, cocos_target=1)  # Convert to COCOS 1 internally
+
         self.eqdsk = eqdsk
         self.psi = RectBivariateSpline(
             eqdsk.r_grid[:, 0], eqdsk.z_grid[0, :], eqdsk.psi, kx=3, ky=3, s=0
@@ -218,31 +312,33 @@ class EquilibriumField:
         # https://freeqdsk.readthedocs.io/en/stable/geqdsk.html
         self.psi_grid = np.linspace(eqdsk.simagx, eqdsk.sibdry, eqdsk.nx)
 
-        # Check sign of Psi grid and flip if necessary to ensure monotonicity
-        # Shouldn't impact filament fitting helicity
+        def _smooth_qpsi_F(eqdsk, psi_grid, lam):
+            # Switching to smoothing spline to avoid strange "discretization" jumps
+            # Note: lam value (lower = less smoothing) should be reasonably consistent across q
+            # profiles, but this is not certain. Lam=1e-7 works for q(psi) and F(psi) so far.
 
-        # q(psi)
-        # RNC EDIT: Switching to smoothing spline to avoid strange "discretization" jumps
-        # Note: lam value (lower = less smoothing) should be reasonably consistent across q
-        # profiles, but this is not certain. Lam=1e-7 works for q(psi) and F(psi) so far.
+            # If Ip < 0, psi decreases from axis to boundary, so reverse when making smoothing spline
+            # Result should be identical, it's just that the make_smoothing_spline method expects monotonically increasing x values
+            sign_Ip = np.sign(float(eqdsk.cpasma))
 
-        # RNC Edit: Verify positive monotonicity
-        if np.all(np.diff(self.psi_grid) > 0):
-            self.qpsi = make_smoothing_spline(
-                self.psi_grid, eqdsk.qpsi, lam=lam, axis=0
-            )
+            if sign_Ip < 0:
+                psi_grid = psi_grid[
+                    ::-1
+                ]  # reverse psi grid for negative Ip to ensure monotonicity of q(psi)
+                qpsi = eqdsk.qpsi[::-1]  # reverse q(psi) correspondingly
+                fpol = eqdsk.fpol[::-1]  # reverse fpol correspondingly
+            else:
+                qpsi = eqdsk.qpsi
+                fpol = eqdsk.fpol
 
+            # q(psi)
+            qpsi_spline = make_smoothing_spline(psi_grid, qpsi, lam=lam, axis=0)
             # F(psi)
-            self.F = make_smoothing_spline(self.psi_grid, eqdsk.fpol, lam=lam, axis=0)
-        else:
-            self.qpsi = make_smoothing_spline(
-                self.psi_grid[::-1], eqdsk.qpsi[::-1], lam=lam, axis=0
-            )
+            F_spline = make_smoothing_spline(psi_grid, fpol, lam=lam, axis=0)
 
-            # F(psi)
-            self.F = make_smoothing_spline(
-                self.psi_grid[::-1], eqdsk.fpol[::-1], lam=lam, axis=0
-            )
+            return qpsi_spline, F_spline
+
+        self.qpsi, self.F = _smooth_qpsi_F(eqdsk, self.psi_grid, lam)
 
     def get_field_at_point(self, R, Z) -> np.ndarray:
         # Bp = Br + Bz = (d(psi)/dZ - d(psi)/dR) / R
@@ -273,52 +369,76 @@ class EquilibriumField:
         return psi
 
     def core_psi_consistency_check(self, qpsi_grid, psi, q):
-        # RNC EDIT:
-        # CHECK: For q~<=1, depending on the resolution of the gEQDSK file,
-        # the interpolation function can request a psi value at or less
-        # than the minimum in the psi_grid vector
-        # Check to see if the value we want plausibly exists in the final set
-        # of q values from the eqdsk
-        # The issue appears to be that although psi is continuous and monotonic,
-        # q values are "grouped" in an odd, stepwise fashion
-        #
-        # Also account for monotonicity direction of psi_grid, which can be either positive
-        # or negative depending on the gEQDSK file (but is always monotonic)
+        """Check for q~<=1
+        Depending on the resolution of the gEQDSK file, the interpolation function can request
+        a psi value at or less than the minimum in the psi_grid vector
+        Check to see if the value we want plausibly exists in the final set of q values from the eqdsk
+        The issue appears to be that although psi is continuous and monotonic,
+        q values can be "grouped" in an odd, stepwise fashion
+        """
+        is_increasing = (self.psi_grid[1] - self.psi_grid[0]) > 0
 
-        if (psi <= self.psi_grid[0]) and np.diff(self.psi_grid[:3])[0] > 0:
-            # check if there's a range of possible q-values (e.g.) if this is plausibly a resolution issue
+        if is_increasing:
+            # positive-monotonic: index 0 at axis (low psi), index -1 at LCFS (high psi)
 
-            if (
-                np.argwhere(qpsi_grid > (qpsi_grid[0] + 1e-3)).squeeze()[0] > 1
-            ):  # multiple identical q values in a row
-                lin_interp_q = np.polyfit(self.psi_grid[:30], qpsi_grid[:30], 1)
-                psi = self.psi_grid[
-                    np.argmin(np.abs(np.polyval(lin_interp_q, self.psi_grid[:30]) - q))
-                ]
-
-            if psi > self.psi_grid[0]:
+            # If psi is in range, return it unchanged
+            if (psi >= self.psi_grid[0]) and (psi <= self.psi_grid[-1]):
                 return psi
-            else:
-                raise ValueError(
-                    "Error: requested q=%1.3f is outside the gEQDSK range (q_min = %1.3f)"
-                    % (q, qpsi_grid[0])
-                )
-        elif (psi >= self.psi_grid[-1]) and np.diff(self.psi_grid[-3:])[0] > 0:
-            if (
-                np.argwhere(qpsi_grid < (qpsi_grid[-1] - 1e-3)).squeeze()[-1]
-                < len(qpsi_grid) - 2
-            ):  # multiple identical q values in a row
-                lin_interp_q = np.polyfit(self.psi_grid[-30:], qpsi_grid[-30:], 1)
-                psi = self.psi_grid[
-                    np.argmin(np.abs(np.polyval(lin_interp_q, self.psi_grid[-30:]) - q))
-                ]
 
-            if psi < self.psi_grid[-1]:
-                return psi
-            else:
+            # If psi is too large, it is past the LCFS and we can't fix it
+            if psi > self.psi_grid[-1]:
                 raise ValueError(
-                    "Error: requested q=%1.3f is outside the gEQDSK range (q_max = %1.3f)"
+                    "Error: requested q=%1.3f is outside the gEQDSK range (q_max = %1.3f) and was unable to be fixed"
                     % (q, qpsi_grid[-1])
                 )
+
+            # If psi is too small, try to fix
+            if psi < self.psi_grid[0]:
+                if (
+                    np.argwhere(qpsi_grid > (qpsi_grid[0] + 1e-3)).squeeze()[0] > 1
+                ):  # multiple almost-identical q values in a row
+                    lin_interp_q = np.polyfit(self.psi_grid[:30], qpsi_grid[:30], 1)
+                    psi_fixed = self.psi_grid[
+                        np.argmin(
+                            np.abs(np.polyval(lin_interp_q, self.psi_grid[:30]) - q)
+                        )
+                    ]
+                    if psi_fixed >= self.psi_grid[0]:
+                        return psi_fixed
+
+            raise ValueError(
+                "Error: requested q=%1.3f is outside the gEQDSK range (q_min = %1.3f) and was unable to be fixed"
+                % (q, qpsi_grid[0])
+            )
         else:
-            return psi
+            # negative-monotonic: index 0 at axis (high psi), index -1 at LCFS (low psi)
+
+            # If psi is in range, return it unchanged
+            if (psi >= self.psi_grid[-1]) and (psi <= self.psi_grid[0]):
+                return psi
+
+            # If psi is too small, it's outside the LCFS and we can't fix it
+            if psi < self.psi_grid[-1]:
+                raise ValueError(
+                    "Error: requested q=%1.3f is outside the gEQDSK range (q_max = %1.3f) and was unable to be fixed"
+                    % (q, qpsi_grid[-1])
+                )
+
+            # If psi is too large, try to fix
+            if psi > self.psi_grid[0]:
+                if (
+                    np.argwhere(qpsi_grid < (qpsi_grid[0] + 1e-3)).squeeze().size > 1
+                ):  # multiple almost-identical q values in a row
+                    lin_interp_q = np.polyfit(self.psi_grid[:30], qpsi_grid[:30], 1)
+                    psi_fixed = self.psi_grid[
+                        np.argmin(
+                            np.abs(np.polyval(lin_interp_q, self.psi_grid[:30]) - q)
+                        )
+                    ]
+                    if psi_fixed <= self.psi_grid[0]:
+                        return psi_fixed
+
+            raise ValueError(
+                "Error: requested q=%1.3f is outside the gEQDSK range (q_min = %1.3f) and was unable to be fixed"
+                % (q, qpsi_grid[0])
+            )

@@ -7,17 +7,22 @@ repos:
         files: \.ipynb$
         stages: [pre-commit]
         language: system
-        entry: jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace
+        entry: uv run jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace
       - id: ruff_format
         name: ruff_format 
-        entry: poetry run ruff format
+        entry: uv run ruff format
         language: system
         types: [python]
         files: "^synthwave/"
       - id: ruff_check
         name: ruff_check
-        entry: poetry run ruff check --fix
+        entry: uv run ruff check --fix
         language: system
         types: [python]
         files: "^synthwave/"
-        exclude: "^synthwave/tests/"
+      - id: isort
+        name: isort
+        entry: uv run isort
+        language: system
+        types: [python]
+        files: "^synthwave/"

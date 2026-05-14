@@ -19,13 +19,17 @@ dependencies = [
     "sympy>=1.14.0",
     "openfusiontoolkit",
     "h5py>=3.14.0",
+    "loguru>=0.7.3",
+    "h5netcdf>=1.8.1",
 ]
 
 [dependency-groups]
 dev = [
+    "jupyter",
     "black>=25.9.0",
     "isort>=7.0.0",
     "mypy>=1.18.2",
+    "nbmake>=1.5.0",
     "pylint>=4.0.1",
     "pytest>=8.4.2",
     "ruff>=0.14.1",
