@@ -200,11 +200,14 @@ class ToroidalFilamentTracer(FilamentTracer):
         R0: float,
         Z0: float,
         a: float,
+        sign_Ip: Optional[int] = 1,
+        sign_B0: Optional[int] = 1,
         base_num_points: Optional[int] = 1000,
         scale_points: Optional[bool] = True,
         prevent_synthetic_structure: Optional[bool] = True,
     ):
         """Initialize a toroidal filament with a circular cross-section.
+        Follows COCOS 1 convention for tracing.
 
         Parameters
         ----------
@@ -218,6 +221,10 @@ class ToroidalFilamentTracer(FilamentTracer):
             Vertical position of the magnetic axis
         a : float
             Minor radius of the circular cross-section
+        sign_Ip : int, optional
+            Sign of the plasma current, used to determine the direction of the filament in Z. Default is +1.
+        sign_B0 : int, optional
+            Sign of the toroidal magnetic field, used to determine the direction of the filament in R. Default is +1.
         base_num_points : int, optional
             Base number of points to trace around the filament
         scale_points : bool, optional
@@ -231,17 +238,34 @@ class ToroidalFilamentTracer(FilamentTracer):
         self.R0 = R0
         self.Z0 = Z0
         self.a = a
+        self.sign_Ip = sign_Ip
+        self.sign_B0 = sign_B0
 
     def trace(self, num_points: Optional[int] = None) -> tuple[np.ndarray, np.ndarray]:
-        # Create a circular filament around the magnetic axis
+        """Create a circular filament in a toroidal geometry.
+        This uses COCOS 1, where phi is CCW angle when viewed from the top and eta is CW when viewing the right poloidal cross section.
+
+        Args:
+            num_points (Optional[int]): Number of points to use for tracing a single poloidal turn
+
+        Returns:
+            tuple[np.ndarray, np.ndarray]: Tuple containing arrays describing the filament coordinates and corresponding eta values
+        """
         if num_points is None:
             num_points = self.num_points
-        phi = np.linspace(0, 2 * np.pi * self.m / self.n, num_points)
+        mode_ratio = np.abs(self.m / self.n)
+        phi = np.linspace(0, 2 * np.pi * mode_ratio, num_points)
         filament_etas = np.linspace(0, 2 * np.pi, num_points)
-        R = self.R0 + self.a * np.cos(filament_etas)
-        Z = self.Z0 + self.a * np.sin(filament_etas)
+        R = self.R0 + (self.a * np.cos(filament_etas)) * self.sign_B0
+        Z = self.Z0 - (self.a * np.sin(filament_etas)) * self.sign_Ip
 
         filament_points = np.column_stack((R, phi, Z))
+
+        if np.sign(self.m * self.n) < 0:
+            # trace should go antiparallel to the field
+            # Flip the arrays and reverse the direction of filament etas
+            filament_points = filament_points[::-1]
+            filament_etas = -filament_etas
 
         return filament_points, filament_etas
 
