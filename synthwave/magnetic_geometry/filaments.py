@@ -63,12 +63,6 @@ class FilamentTracer(ABC):
 
         ratio = Fraction(self.m, self.n)
         n_local = ratio.denominator
-        if gcd(num_filaments, n_local) != 1:
-            raise ValueError(
-                f"num_filaments={num_filaments} and n_local={n_local} are not coprime "
-                f"(gcd={gcd(num_filaments, n_local)}), which would produce overlapping filaments. "
-                f"Choose a num_filaments that is coprime with {n_local}."
-            )
 
         if coordinate_system not in ["cylindrical", "cartesian", "toroidal"]:
             raise ValueError(
