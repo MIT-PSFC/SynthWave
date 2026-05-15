@@ -22,6 +22,8 @@ _CMOD_EQDSK_FILE = os.path.join(PACKAGE_ROOT, "input_data", "cmod", "g1051202011
 
 @pytest.fixture(scope="module")
 def cmod_eqdsk():
+    if not os.path.exists(_CMOD_EQDSK_FILE):
+        pytest.skip(f"Missing required EQDSK file: {_CMOD_EQDSK_FILE}")
     with open(_CMOD_EQDSK_FILE, "r") as f:
         return freeqdsk.geqdsk.read(f)
 

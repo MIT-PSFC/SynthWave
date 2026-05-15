@@ -8,13 +8,92 @@ import numpy as np
 import xarray as xr
 from loguru import logger
 from scipy.interpolate import make_interp_spline
-from scipy.optimize import newton
+from scipy.optimize import root_scalar
 from sympy import nextprime
 
 from synthwave.magnetic_geometry.equilibrium_field import (
     EquilibriumField,
 )
 from synthwave.magnetic_geometry.utils import cylindrical_to_cartesian
+
+
+def _solve_root_with_adaptive_bracket(
+    f,
+    x0: float,
+    fprime,
+    bracket: tuple[float, float],
+    xtol: float = 1e-3,
+    maxiter: int = 100,
+    n_scan: int = 81,
+    debug_output: bool = False,
+) -> float:
+    """Solve f(x)=0 with bracket->scan->Newton fallback.
+
+    Use an adaptive strategy with search limits, should have improved convergence.
+    """
+
+    a, b = float(bracket[0]), float(bracket[1])
+    if b < a:
+        a, b = b, a
+
+    # Ensure that upper bound is sufficiently larger than the initial guess
+    if b - x0 < 0.2 * b:
+        b = x0 + 0.2 * b
+
+    fa = f(a)
+    fb = f(b)
+    if np.isclose(fa, 0.0):
+        return a
+    if np.isclose(fb, 0.0):
+        return b
+
+    if np.sign(fa) != np.sign(fb):
+        result = root_scalar(
+            f=f,
+            method="toms748",
+            bracket=[a, b],
+            xtol=xtol,
+            maxiter=maxiter,
+        )
+        if not result.converged:
+            if debug_output:
+                print("Result: ", result)
+                print("Bracket: ", bracket)
+                print("X0: ", x0)
+                print("Function: ", f)
+                print("Fprime: ", fprime)
+            raise ValueError("Root solve did not converge")
+        return float(result.root)
+
+    # If endpoints have the same sign, scan for a local sign change and
+    # prefer the interval closest to x0. [e.g. outer boundary is getting close
+    #  to a magnetic coil, so Psi is concave across the boundary]
+    xs = np.linspace(a, b, n_scan)
+    fs = np.array([f(x) for x in xs])
+    finite = np.isfinite(fs)
+    for i in np.where(finite & np.isclose(fs, 0.0))[0]:
+        return float(xs[i])
+
+    # Last resort: open method from the local guess.
+    result = root_scalar(
+        f=f,
+        x0=float(np.clip(x0, a, b)),
+        fprime=fprime,
+        method="newton",
+        xtol=xtol,
+        maxiter=maxiter,
+    )
+    if not result.converged:
+        if debug_output:
+            logger.debug("Result: {}", result)
+            logger.debug("Function values: {}", fs)
+            logger.debug("X values: {}", xs)
+            logger.debug("Bracket: {}", bracket)
+            logger.debug("X0: {}", x0)
+            logger.debug("Function: {}", f)
+            logger.debug("Fprime: {}", fprime)
+        raise ValueError("Root solve did not converge")
+    return float(result.root)
 
 
 class FilamentTracer(ABC):
@@ -355,12 +434,19 @@ class EquilibriumFilamentTracer(FilamentTracer):
         # Start at the outboard midplane, slightly outside magnetic axis
         Z_start = self.eq_field.eqdsk.zmagx
         R_guess = self.eq_field.eqdsk.rmagx + 0.1
-        R_start = newton(
-            func=lambda R: self.eq_field.psi.ev(R, Z_start) - psi_q,
+
+        # Switching from Newton solver to bracket+scan+Newton approach to improve convergence,
+        # especially for very high or very low q m/n modes
+        R_start = _solve_root_with_adaptive_bracket(
+            f=lambda R: self.eq_field.psi.ev(R, Z_start) - psi_q,
             x0=R_guess,
             fprime=lambda R: self.eq_field.psi.ev(R, Z_start, dx=1, dy=0),
-            maxiter=800,
-            tol=1e-3,
+            bracket=(
+                self.eq_field.eqdsk.rmagx,
+                self.eq_field.eqdsk.rbdry.max() + 0.2,
+            ),  # Slightly overlarge upper limit: outer limiter surface
+            xtol=1e-3,
+            maxiter=100,
         )
 
         # Sliding along minor radius a to meet the rational surface
@@ -396,13 +482,24 @@ class EquilibriumFilamentTracer(FilamentTracer):
                 (R_prev - self.eq_field.eqdsk.rmagx) ** 2
                 + (Z_prev - self.eq_field.eqdsk.zmagx) ** 2
             )
-            a_next = newton(
-                func=lambda a: self.eq_field.psi.ev(_R_a(eta, a), _Z_a(eta, a)) - psi_q,
+
+            # Maximum minor radius: greatest distance from magnetic axis to boundary
+            a_max = np.sqrt(
+                (self.eq_field.eqdsk.rbdry - self.eq_field.eqdsk.rmagx) ** 2
+                + (self.eq_field.eqdsk.zbdry - self.eq_field.eqdsk.zmagx) ** 2
+            ).max()
+            a_next = _solve_root_with_adaptive_bracket(
+                f=lambda a: self.eq_field.psi.ev(_R_a(eta, a), _Z_a(eta, a)) - psi_q,
                 x0=a_guess,
                 fprime=lambda a: psi_prime_a(eta, a),
-                maxiter=800,
-                tol=1e-3,
+                bracket=(
+                    0,
+                    a_max,
+                ),  # Upper limit: max distance from magnetic axis to boundary
+                xtol=1e-3,
+                maxiter=5000,
             )
+
             poloidal_points[i, :] = [_R_a(eta, a_next), _Z_a(eta, a_next), a_next]
 
         # alternative form removing the assumption that dl = r d_eta (that assumption holds only for circular cross-sections)
