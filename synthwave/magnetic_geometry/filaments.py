@@ -485,14 +485,19 @@ class EquilibriumFilamentTracer(FilamentTracer):
                 + (Z_prev - self.eq_field.eqdsk.zmagx) ** 2
             )
 
+            # Maximum minor radius: greatest distance from magnetic axis to boundary
+            a_max = np.sqrt(
+                (self.eq_field.eqdsk.rbdry - self.eq_field.eqdsk.rmagx) ** 2
+                + (self.eq_field.eqdsk.zbdry - self.eq_field.eqdsk.zmagx) ** 2
+            ).max()
             a_next = _solve_root_with_adaptive_bracket(
                 f=lambda a: self.eq_field.psi.ev(_R_a(eta, a), _Z_a(eta, a)) - psi_q,
                 x0=a_guess,
                 fprime=lambda a: psi_prime_a(eta, a),
                 bracket=(
                     0,
-                    self.eq_field.eqdsk.rbdry.max() - self.eq_field.eqdsk.rmagx + 0.2,
-                ),  # Slightly overlarge upper limit: outer limiter surface
+                    a_max,
+                ),  # Upper limit: max distance from magnetic axis to boundary
                 xtol=1e-3,
                 maxiter=5000,
             )
