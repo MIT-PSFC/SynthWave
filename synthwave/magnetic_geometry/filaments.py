@@ -55,8 +55,8 @@ def _solve_root_with_adaptive_bracket(
         ).root
 
     # If endpoints have the same sign, scan for a local sign change and
-    # prefer the interval closest to x0. [e.g. outer boundry is getting close
-    #  to a magnetic coil, so Psi is concave across the boundry]
+    # prefer the interval closest to x0. [e.g. outer boundary is getting close
+    #  to a magnetic coil, so Psi is concave across the boundary]
     xs = np.linspace(a, b, n_scan)
     fs = np.array([f(x) for x in xs])
     finite = np.isfinite(fs)
