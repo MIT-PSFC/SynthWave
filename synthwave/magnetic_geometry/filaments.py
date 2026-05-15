@@ -436,13 +436,9 @@ class EquilibriumFilamentTracer(FilamentTracer):
         # Start at the outboard midplane, slightly outside magnetic axis
         Z_start = self.eq_field.eqdsk.zmagx
         R_guess = self.eq_field.eqdsk.rmagx + 0.1
-        # R_start = newton(
-        #     func=lambda R: self.eq_field.psi.ev(R, Z_start) - psi_q,
-        #     x0=R_guess,
-        #     fprime=lambda R: self.eq_field.psi.ev(R, Z_start, dx=1, dy=0),
-        #     maxiter=800,
-        #     tol=1e-3,
-        # )
+
+        # Switching from Newton solver to bracket+scan+Newton approach to improve convergence,
+        # especially for very high or very low q m/n modes
         R_start = _solve_root_with_adaptive_bracket(
             f=lambda R: self.eq_field.psi.ev(R, Z_start) - psi_q,
             x0=R_guess,
@@ -488,13 +484,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
                 (R_prev - self.eq_field.eqdsk.rmagx) ** 2
                 + (Z_prev - self.eq_field.eqdsk.zmagx) ** 2
             )
-            # a_next = newton(
-            #     func=lambda a: self.eq_field.psi.ev(_R_a(eta, a), _Z_a(eta, a)) - psi_q,
-            #     x0=a_guess,
-            #     fprime=lambda a: psi_prime_a(eta, a),
-            #     maxiter=5000,
-            #     tol=5e-3,
-            # )
+
             a_next = _solve_root_with_adaptive_bracket(
                 f=lambda a: self.eq_field.psi.ev(_R_a(eta, a), _Z_a(eta, a)) - psi_q,
                 x0=a_guess,
