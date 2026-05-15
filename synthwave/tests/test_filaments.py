@@ -20,12 +20,57 @@ FIG_DIR = os.path.join(PACKAGE_ROOT, "tests", "figures")
 _CMOD_EQDSK_FILE = os.path.join(PACKAGE_ROOT, "input_data", "cmod", "g1051202011.1000")
 
 
+class _LazyCmodEqdsk:
+    """Lazily load the C-Mod EQDSK so unused parametrized cases are not skipped."""
+
+    def __init__(self, eqdsk_file):
+        self._eqdsk_file = eqdsk_file
+        self._eqdsk = None
+
+    def _load(self):
+        if self._eqdsk is None:
+            if not os.path.exists(self._eqdsk_file):
+                pytest.skip(f"Missing required EQDSK file: {self._eqdsk_file}")
+            with open(self._eqdsk_file, "r") as f:
+                self._eqdsk = freeqdsk.geqdsk.read(f)
+        return self._eqdsk
+
+    def __getattr__(self, name):
+        return getattr(self._load(), name)
+
+    def __getitem__(self, key):
+        return self._load()[key]
+
+    def __iter__(self):
+        return iter(self._load())
+
+    def __len__(self):
+        return len(self._load())
+
+    def __contains__(self, item):
+        return item in self._load()
+
+    def get(self, *args, **kwargs):
+        return self._load().get(*args, **kwargs)
+
+    def keys(self):
+        return self._load().keys()
+
+    def items(self):
+        return self._load().items()
+
+    def values(self):
+        return self._load().values()
+
+    def __repr__(self):
+        if self._eqdsk is None:
+            return f"<_LazyCmodEqdsk file={self._eqdsk_file!r} (not loaded)>"
+        return repr(self._eqdsk)
+
+
 @pytest.fixture(scope="module")
 def cmod_eqdsk():
-    if not os.path.exists(_CMOD_EQDSK_FILE):
-        pytest.skip(f"Missing required EQDSK file: {_CMOD_EQDSK_FILE}")
-    with open(_CMOD_EQDSK_FILE, "r") as f:
-        return freeqdsk.geqdsk.read(f)
+    return _LazyCmodEqdsk(_CMOD_EQDSK_FILE)
 
 
 class TestToroidalFilamentTracer:
