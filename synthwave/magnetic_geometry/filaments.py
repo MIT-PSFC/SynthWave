@@ -27,8 +27,10 @@ def _solve_root_with_adaptive_bracket(
     n_scan: int = 81,
     debug_output: bool = False,
 ) -> float:
-    """Solve f(x)=0 with bracket->scan->Newton fallback."""
-    """Use an adaptive strategy with search limits, should have improved convergence"""
+    """Solve f(x)=0 with bracket->scan->Newton fallback.
+
+    Use an adaptive strategy with search limits, should have improved convergence.
+    """
 
     a, b = float(bracket[0]), float(bracket[1])
     if b < a:
@@ -46,13 +48,22 @@ def _solve_root_with_adaptive_bracket(
         return b
 
     if np.sign(fa) != np.sign(fb):
-        return root_scalar(
+        result = root_scalar(
             f=f,
             method="toms748",
             bracket=[a, b],
             xtol=xtol,
             maxiter=maxiter,
-        ).root
+        )
+        if not result.converged:
+            if debug_output:
+                print("Result: ", result)
+                print("Bracket: ", bracket)
+                print("X0: ", x0)
+                print("Function: ", f)
+                print("Fprime: ", fprime)
+            raise ValueError("Root solve did not converge")
+        return float(result.root)
 
     # If endpoints have the same sign, scan for a local sign change and
     # prefer the interval closest to x0. [e.g. outer boundary is getting close
@@ -74,13 +85,13 @@ def _solve_root_with_adaptive_bracket(
     )
     if not result.converged:
         if debug_output:
-            print("Result: ", result)
-            print("Function values: ", fs)
-            print("X values: ", xs)
-            print("Bracket: ", bracket)
-            print("X0: ", x0)
-            print("Function: ", f)
-            print("Fprime: ", fprime)
+            logger.debug("Result: {}", result)
+            logger.debug("Function values: {}", fs)
+            logger.debug("X values: {}", xs)
+            logger.debug("Bracket: {}", bracket)
+            logger.debug("X0: {}", x0)
+            logger.debug("Function: {}", f)
+            logger.debug("Fprime: {}", fprime)
         raise ValueError("Root solve did not converge")
     return float(result.root)
 
@@ -110,19 +121,6 @@ class FilamentTracer(ABC):
     @abstractmethod
     def trace(self, num_points: Optional[int] = None) -> tuple[np.ndarray, np.ndarray]:
         """Trace the filament and return the points in cylindrical coordinates (R, phi, Z), and the corresponding eta values."""
-
-    @staticmethod
-    def _reduced_mode_components(m: int, n: int) -> tuple[int, int, int, int]:
-        """Return reduced mode magnitudes and signs as (m_red, n_red, s_m, s_n)."""
-        if n == 0:
-            raise ValueError("Toroidal mode number n must be non-zero")
-
-        g = np.gcd(abs(m), abs(n))
-        m_red = abs(m) // g
-        n_red = abs(n) // g
-        s_m = -1 if m < 0 else 1
-        s_n = -1 if n < 0 else 1
-        return m_red, n_red, s_m, s_n
 
     def get_filament_ds(
         self,
