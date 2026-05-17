@@ -460,7 +460,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
             dR = np.roll(R, -1) - R
             dZ = np.roll(Z, -1) - Z
             dl = np.sqrt(dR**2 + dZ**2)
-            d_phi = _d_phi_dl(dl, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1])
+            d_phi = self.helicity_sign * _d_phi_dl(dl, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1])
 
             if trace_type == EquilibriumFilamentTracer.TraceType.SINGLE:
                 phi = np.cumsum(d_phi) - d_phi[0]
@@ -473,6 +473,11 @@ class EquilibriumFilamentTracer(FilamentTracer):
             # sign_Bt carries the direction of the toroidal field; helicity_sign
             # carries whether we trace parallel (+1) or antiparallel (-1) to the field.
             known_phi_end = self.helicity_sign * sign_Bt * 2 * np.pi * m_local / n_local
+
+            q_eff = np.abs(phi[-1]) / (2 * np.pi)
+            logger.debug(
+                f"m={self.m} n={self.n}: psi_q={psi_q:.6f}, q_requested={m_local/n_local:.4f}, q_eff={q_eff:.4f}"
+            )
 
             # If actual phi significantly deviates from known phis, log a critical warning
             if not np.isclose(phi[-1], known_phi_end, atol=0.5):

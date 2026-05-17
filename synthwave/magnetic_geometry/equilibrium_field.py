@@ -317,16 +317,13 @@ class EquilibriumField:
             # Note: lam value (lower = less smoothing) should be reasonably consistent across q
             # profiles, but this is not certain. Lam=1e-7 works for q(psi) and F(psi) so far.
 
-            # If Ip < 0, psi decreases from axis to boundary, so reverse when making smoothing spline
-            # Result should be identical, it's just that the make_smoothing_spline method expects monotonically increasing x values
-            sign_Ip = np.sign(float(eqdsk.cpasma))
-
-            if sign_Ip < 0:
-                psi_grid = psi_grid[
-                    ::-1
-                ]  # reverse psi grid for negative Ip to ensure monotonicity of q(psi)
-                qpsi = eqdsk.qpsi[::-1]  # reverse q(psi) correspondingly
-                fpol = eqdsk.fpol[::-1]  # reverse fpol correspondingly
+            # make_smoothing_spline requires strictly increasing x.
+            # psi can decrease from axis to boundary (e.g. after COCOS conversion flips sign),
+            # regardless of Ip sign. Check the actual direction and reverse if needed.
+            if psi_grid[-1] < psi_grid[0]:
+                psi_grid = psi_grid[::-1]
+                qpsi = eqdsk.qpsi[::-1]
+                fpol = eqdsk.fpol[::-1]
             else:
                 qpsi = eqdsk.qpsi
                 fpol = eqdsk.fpol
