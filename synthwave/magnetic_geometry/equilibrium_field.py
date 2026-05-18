@@ -300,8 +300,8 @@ def convert_cocos(
 
 
 class EquilibriumField:
-    def __init__(self, eqdsk, lam=1e-7):
-        eqdsk = convert_cocos(eqdsk, cocos_target=1)  # Convert to COCOS 1 internally
+    def __init__(self, eqdsk, cocos_input: int | None = None, lam=1e-7):
+        eqdsk = convert_cocos(eqdsk, cocos_target=1, cocos_input=cocos_input)  # Convert to COCOS 1 internally
 
         self.eqdsk = eqdsk
         self.psi = RectBivariateSpline(
