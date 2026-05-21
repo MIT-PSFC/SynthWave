@@ -345,6 +345,7 @@ def run_frequency_scan(
     )
 
     # Test one frequency
+    # Disable HODLR compression to improve convergence
     result = tw_mesh.compute_freq_response(fdriver=driver, freq=freq)
 
     # contribution from the mesh current to the sensor, with the mesh current at a given frequency
