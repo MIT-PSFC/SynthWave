@@ -177,15 +177,15 @@ class TestCocos:
         tidx = 1100
 
         ds = xr.open_dataset(ds_input_path, engine="h5netcdf")
-        ds_eq = ds.sel(time_idx=tidx).isel(frequency_idx=0)
+        ds_eq = ds.sel(time_idx=tidx).isel(frequency=0)
 
         eqdsk = self.xr_to_eqdsk(ds_eq)
         return eqdsk
 
     @staticmethod
     def xr_to_eqdsk(ds_eq):
-        nx = len(ds_eq["rgrid"])
-        ny = len(ds_eq["zgrid"])
+        nx = len(ds_eq["r_grid"])
+        ny = len(ds_eq["z_grid"])
 
         def _resample_to_nx(arr: np.ndarray) -> np.ndarray:
             arr = np.array(arr, dtype=float)
@@ -206,27 +206,27 @@ class TestCocos:
             shot=82878,
             nx=nx,
             ny=ny,
-            rdim=float(ds_eq["rgrid"][-1] - ds_eq["rgrid"][0]),
-            zdim=float(ds_eq["zgrid"][-1] - ds_eq["zgrid"][0]),
-            rcentr=float(ds_eq["rgrid"][nx // 2]),
-            rleft=float(ds_eq["rgrid"][0]),
-            zmid=float(ds_eq["zgrid"][ny // 2]),
+            rdim=float(ds_eq["r_grid"][-1] - ds_eq["r_grid"][0]),
+            zdim=float(ds_eq["z_grid"][-1] - ds_eq["z_grid"][0]),
+            rcentr=float(ds_eq["r_grid"][nx // 2]),
+            rleft=float(ds_eq["r_grid"][0]),
+            zmid=float(ds_eq["z_grid"][ny // 2]),
             rmagx=float(ds_eq["rmagx"]),
             zmagx=float(ds_eq["zmagx"]),
             simagx=float(ds_eq["simagx"]),
             sibdry=float(ds_eq["sibdry"]),
             bcentr=float(ds_eq["bcentr"]),
-            cpasma=float(ds_eq["cpasma"]),
+            cpasma=float(ds_eq["current"]),
             fpol=_resample_to_nx(ds_eq["fpol"].values),
             pres=_resample_to_nx(ds_eq["pres"].values),
             ffprime=_resample_to_nx(ds_eq["ffprime"].values),
             pprime=_resample_to_nx(ds_eq["pprime"].values),
             psi=ds_eq["psirz"].values,
             qpsi=_resample_to_nx(ds_eq["qpsi"].values),
-            nbdry=len(ds_eq["rbbbs"]),
+            nbdry=len(ds_eq["rbdry"]),
             nlim=0,
-            rbdry=ds_eq["rbbbs"].values,
-            zbdry=ds_eq["zbbbs"].values,
+            rbdry=ds_eq["rbdry"].values,
+            zbdry=ds_eq["zbdry"].values,
             rlim=[],
             zlim=[],
         )
@@ -320,7 +320,7 @@ class TestCocos:
             ds = xr.open_dataset(ds_input_path, engine="h5netcdf")
 
             # drop timeslices with no valid equilibrium data
-            valid_times = ds["psirz"].notnull().any(dim=["r_idx", "z_idx"])
+            valid_times = ds["psirz"].notnull().any(dim=["r_grid", "z_grid"])
             ds = ds.sel(time_idx=valid_times)
 
             prev_cocos = None
