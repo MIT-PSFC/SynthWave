@@ -70,10 +70,16 @@ def calc_direct_response(
                 direct_response.imag,
             ),
         },
+        # Ensure that the coordinate carries both the name and index or the sensor, to ensure that ordering is preserved
         coords={
-            "sensor_idx": sensor_obj[
-                "names"
-            ]  # Define the 'sensor_idx' coordinate with the list of sensor names
+            "sensor_name": (
+                "sensor_idx",
+                sensor_obj["names"],
+            ),  # Define the 'sensor_name' coordinate with the list of sensor names
+            "sensor_idx": (
+                "sensor_idx",
+                sensor_details.coords["sensor_idx"].values,
+            ),  # Define the 'sensor_idx' coordinate with the list of sensor names
         },
         attrs={
             "mesh_file": mesh_file,

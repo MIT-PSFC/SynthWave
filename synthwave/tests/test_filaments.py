@@ -844,13 +844,20 @@ class TestEquilibriumFilamentTracer:
         )
 
     @pytest.mark.parametrize(
-        "mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": 3, "n": 1}, {"m": 4, "n": 3}]
+        "mode",
+        [
+            {"m": 2, "n": 1},
+            {"m": -2, "n": 1},
+            {"m": 3, "n": 2},
+            {"m": 3, "n": 1},
+            {"m": 4, "n": 3},
+        ],
     )
     def test_points_and_currents_3d(self, cmod_eqdsk, mode):
         """Test get_filament_ds method and create 3D visualization of filament traces."""
 
         eq_field = EquilibriumField(cmod_eqdsk)
-        num_filaments = 7  # Prime: coprime with any n_local
+        num_filaments = 23  # Prime: coprime with any n_local
 
         fig_dir = os.path.join(self.fig_dir, "test_points_and_currents_3d")
         if not os.path.exists(fig_dir):
