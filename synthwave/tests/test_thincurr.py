@@ -19,9 +19,9 @@ from synthwave.mirnov.prep_thincurr_input import (
     gen_OFT_filament_and_eta_file,
     gen_OFT_sensors_file,
 )
-from synthwave.mirnov.run_thincurr_model import (
-    calc_direct_response,
-    calc_frequency_response,
+from synthwave.mirnov.synthetic_signal import (
+    direct_response_thincurr,
+    frequency_response_thincurr,
 )
 
 # All tests in this file use the OpenFUSIONToolkit C++ library which has
@@ -171,7 +171,7 @@ def test_toroidal_angles(mode, oft_env_fixture):
             working_directory=working_directory,
         )
 
-        total_response, direct_response, _vessel_response = calc_frequency_response(
+        total_response, direct_response, _vessel_response = frequency_response_thincurr(
             oft_env=oft_env_fixture,
             tracer=toroidal_tracer,
             freq=10e3,
@@ -318,8 +318,8 @@ def test_gen_OFT_sensors_file():
         assert len(content) > 0
 
 
-def test_calc_direct_response_matches_frequency_response(oft_env_fixture):
-    """calc_direct_response must return the same direct component as calc_frequency_response."""
+def test_direct_response_thincurr_matches_frequency_response(oft_env_fixture):
+    """direct_response_thincurr must return the same direct component as frequency_response_thincurr."""
 
     major_radius = 1
     minor_radius_vessel = 0.35
@@ -376,7 +376,7 @@ def test_calc_direct_response_matches_frequency_response(oft_env_fixture):
             working_directory, filament_list, [1e-6] * len(filament_list)
         )
 
-        total_response, direct_response_freq, vessel_response = calc_frequency_response(
+        total_response, direct_response_freq, vessel_response = frequency_response_thincurr(
             oft_env=oft_env_fixture,
             tracer=toroidal_tracer,
             freq=10e3,
@@ -385,7 +385,7 @@ def test_calc_direct_response_matches_frequency_response(oft_env_fixture):
             sensor_file_path=sensor_file_path,
         )
 
-        direct_response_only = calc_direct_response(
+        direct_response_only = direct_response_thincurr(
             oft_env=oft_env_fixture,
             tracer=toroidal_tracer,
             mesh_file=torus_mesh_file,
@@ -406,5 +406,5 @@ def test_calc_direct_response_matches_frequency_response(oft_env_fixture):
         direct_from_direct,
         direct_from_freq,
         rtol=1e-6,
-        err_msg="calc_direct_response must match the direct component of calc_frequency_response",
+        err_msg="direct_response_thincurr must match the direct component of frequency_response_thincurr",
     )
