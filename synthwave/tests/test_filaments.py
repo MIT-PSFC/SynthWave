@@ -15,6 +15,7 @@ from synthwave.magnetic_geometry.filaments import (
     FilamentTracer,
     ToroidalFilamentTracer,
 )
+from synthwave.magnetic_geometry.utils import cylindrical_to_cartesian
 
 FIG_DIR = os.path.join(PACKAGE_ROOT, "tests", "figures")
 _CMOD_EQDSK_FILE = os.path.join(PACKAGE_ROOT, "input_data", "cmod", "g1051202011.1000")
@@ -620,6 +621,58 @@ class TestEquilibriumFilamentTracer:
         # Check shape
         assert points.shape == (expected_points, 3)
         assert etas.shape == (expected_points,)
+
+    def test_get_filament_ds_trace_type_passed(self, cmod_eqdsk):
+        """Test that get_filament_ds passes trace_type through to trace()."""
+        eq_field = EquilibriumField(cmod_eqdsk)
+        tracer = EquilibriumFilamentTracer(
+            4,
+            1,
+            eq_field,
+            base_num_points=101,
+            default_trace_type=EquilibriumFilamentTracer.TraceType.SINGLE,
+        )
+        points_field, _ = tracer.trace(
+            num_points=tracer.num_points,
+            trace_type=EquilibriumFilamentTracer.TraceType.FIELD,
+        )
+        ds_field = tracer.get_filament_ds(
+            num_filaments=1,
+            coordinate_system="cartesian",
+            trace_type=EquilibriumFilamentTracer.TraceType.FIELD,
+        )
+        x, y, z = (ds_field[coord].isel(filament=0).values for coord in ["x", "y", "z"])
+        xyz = np.stack((x, y, z), axis=-1)
+        cyl_x, cyl_y, cyl_z = points_field[:, 0], points_field[:, 1], points_field[:, 2]
+        expected_xyz = np.stack(cylindrical_to_cartesian(cyl_x, cyl_y, cyl_z), axis=-1)
+        np.testing.assert_allclose(xyz, expected_xyz, atol=1e-8)
+
+    def test_get_filament_list_trace_type_passed(self, cmod_eqdsk):
+        """Test that get_filament_list passes trace_type through to trace()."""
+        eq_field = EquilibriumField(cmod_eqdsk)
+        tracer = EquilibriumFilamentTracer(
+            4,
+            1,
+            eq_field,
+            base_num_points=101,
+            default_trace_type=EquilibriumFilamentTracer.TraceType.SINGLE,
+        )
+        points_field, _ = tracer.trace(
+            num_points=tracer.num_points,
+            trace_type=EquilibriumFilamentTracer.TraceType.FIELD,
+        )
+        filament_list, _ = tracer.get_filament_list(
+            num_filaments=1,
+            coordinate_system="cartesian",
+            trace_type=EquilibriumFilamentTracer.TraceType.FIELD,
+        )
+        expected_xyz = np.stack(
+            cylindrical_to_cartesian(
+                points_field[:, 0], points_field[:, 1], points_field[:, 2]
+            ),
+            axis=-1,
+        )
+        np.testing.assert_allclose(filament_list[0], expected_xyz, atol=1e-8)
 
     @pytest.mark.parametrize(
         "mode",
