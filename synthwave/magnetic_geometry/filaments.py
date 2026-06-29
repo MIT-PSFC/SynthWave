@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 from fractions import Fraction
-from math import gcd
 from typing import Optional
 
 import numpy as np
@@ -460,7 +459,9 @@ class EquilibriumFilamentTracer(FilamentTracer):
             dR = np.roll(R, -1) - R
             dZ = np.roll(Z, -1) - Z
             dl = np.sqrt(dR**2 + dZ**2)
-            d_phi = self.helicity_sign * _d_phi_dl(dl, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1])
+            d_phi = self.helicity_sign * _d_phi_dl(
+                dl, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1]
+            )
 
             if trace_type == EquilibriumFilamentTracer.TraceType.SINGLE:
                 phi = np.cumsum(d_phi) - d_phi[0]
@@ -476,7 +477,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
 
             q_eff = np.abs(phi[-1]) / (2 * np.pi)
             logger.debug(
-                f"m={self.m} n={self.n}: psi_q={psi_q:.6f}, q_requested={m_local/n_local:.4f}, q_eff={q_eff:.4f}"
+                f"m={self.m} n={self.n}: psi_q={psi_q:.6f}, q_requested={m_local / n_local:.4f}, q_eff={q_eff:.4f}"
             )
 
             # If actual phi significantly deviates from known phis, log a critical warning

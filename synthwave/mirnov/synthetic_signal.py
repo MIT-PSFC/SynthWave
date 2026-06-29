@@ -12,6 +12,7 @@ from scipy.constants import mu_0
 
 from synthwave.magnetic_geometry.filaments import FilamentTracer
 
+
 def direct_response_biot_savart(
     sensor_details: xr.Dataset,
     filament_list: list,
@@ -50,6 +51,7 @@ def direct_response_biot_savart(
         flux = np.sum(B_total * sensor_normals, axis=1) * sensor_areas  # (n_sensors,)
         direct_response += current * flux
     return direct_response
+
 
 def direct_response_thincurr(
     oft_env: OFT_env,

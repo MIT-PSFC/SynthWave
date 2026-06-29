@@ -376,13 +376,15 @@ def test_direct_response_thincurr_matches_frequency_response(oft_env_fixture):
             working_directory, filament_list, [1e-6] * len(filament_list)
         )
 
-        total_response, direct_response_freq, vessel_response = frequency_response_thincurr(
-            oft_env=oft_env_fixture,
-            tracer=toroidal_tracer,
-            freq=10e3,
-            mesh_file=torus_mesh_file,
-            working_directory=working_directory,
-            sensor_file_path=sensor_file_path,
+        total_response, direct_response_freq, vessel_response = (
+            frequency_response_thincurr(
+                oft_env=oft_env_fixture,
+                tracer=toroidal_tracer,
+                freq=10e3,
+                mesh_file=torus_mesh_file,
+                working_directory=working_directory,
+                sensor_file_path=sensor_file_path,
+            )
         )
 
         direct_response_only = direct_response_thincurr(
