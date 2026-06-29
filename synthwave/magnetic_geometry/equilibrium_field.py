@@ -42,8 +42,9 @@ def biot_savart_cylindrical(
     return B_cylindrical
 
 
-def detect_cocos(eqdsk: GEQDSKFile) -> int | None:
+def detect_cocos(eqdsk: GEQDSKFile, sign_RphiZ: int | None = 1) -> int | None:
     """Detect the COCOS of a given GEQDSK file, or None if it cannot be determined.
+    Cannot distinguish between odd and even COCOS since sigma_RphiZ is not recoverable from a geqdsk file.
     See `Sauter et al, 2013 <https://doi.org/10.1016/j.cpc.2012.09.010>`_.
     Also https://crppwww.epfl.ch/~sauter/cocos/ and https://crppwww.epfl.ch/~sauter/cocos/Sauter_COORD_CONVENTIONS_COCOS_2012_updated_after_reprint_for_Appendices_and_refs.pdf
 
@@ -53,11 +54,16 @@ def detect_cocos(eqdsk: GEQDSKFile) -> int | None:
     - sign_RphiZ: +1 if (R, phi, Z), -1 if (R, Z, phi)
     - sign_rhotp: +1 if (rho, theta, phi), -1 if (rho, phi, theta)
 
-    sign_rhotp is derived from sign(Ip * B0) (discharge helicity) rather than sign(q),
-    because some codes store abs(q). From Sauter Table I: sign(q) = sign_Bp * sign_RphiZ * sign_rhotp.
-    For sign_RphiZ=+1 codes, sign(B0) = sign(q_physical), making this equivalent to the
-    Sauter criterion. For sign_RphiZ=-1 codes, sign(B0) gives consistent results when B0
-    has its physical sign.
+    sign_rhotp uses Sauter Table I: sign(q) = sign_rhotp * sign(Ip * B0),
+    so sign_rhotp = sign(q) * sign(Ip) * sign(B0)
+    When q is stored as abs(q) (sign(q)=+1, as EFIT does) this reduces to the discharge helicity sign(Ip * B0)
+    when q is signed it recovers sign_rhotp directly, which is what COCOS conversion encodes.
+
+    NOTE: sigma_RphiZ cannot be determined from a geqdsk file alone. Both bcentr and
+    fpol transform identically under a sigma_RphiZ change (Sauter Eq. 45), so their ratio
+    is always +1 in a self-consistent file. This function assumes sigma_RphiZ=+1, the
+    standard (R, phi, Z) convention used by geqdsk-producing codes (EFIT, LIUQE,
+    CHEASE, etc.). It therefore only returns odd COCOS values (1,3,5,7,11,13,15,17).
     """
     # Initial checks to ensure the present timeslice has a decent equilibrium
 
@@ -71,104 +77,102 @@ def detect_cocos(eqdsk: GEQDSKFile) -> int | None:
     # these don't really make sense to run on since the equilibrium is not well-formed, so just skip them.
     psi_increasing = float(np.sign(eqdsk.sibdry - eqdsk.simagx))
     if psi_increasing > 0:
-        if eqdsk.sibdry > np.max(eqdsk.psi):
+        if eqdsk.sibdry > np.max(eqdsk.psirz):
             logger.warning(
-                "sibdry > max(psi) with increasing psi from axis to boundary, unable to determine COCOS"
+                "sibdry > max(psirz) with increasing psi from axis to boundary, unable to determine COCOS"
             )
             return None
-        # simagx < min(psi) is allowed
+        # simagx < min(psirz) is allowed
     else:
-        if eqdsk.sibdry < np.min(eqdsk.psi):
+        if eqdsk.sibdry < np.min(eqdsk.psirz):
             logger.warning(
-                "sibdry < min(psi) with decreasing psi from axis to boundary, unable to determine COCOS"
+                "sibdry < min(psirz) with decreasing psi from axis to boundary, unable to determine COCOS"
             )
             return None
-        # simagx > max(psi) is allowed
+        # simagx > max(psirz) is allowed
 
-    sign_Ip = np.sign(float(eqdsk.cpasma))
+    sign_Ip = np.sign(float(eqdsk.current))
     sign_B0 = np.sign(float(eqdsk.bcentr))
     # From table III: sign(dpsi) = sign_Bp * sign_Ip
     sign_Bp = int(psi_increasing * sign_Ip)
 
-    # sign_RphiZ = +1 (R,phi,Z, phi CCW): F = R*B_phi has same sign as B0.
-    # sign_RphiZ = -1 (R,Z,phi, phi CW): stored F has opposite sign to physical B0.
-    # When bcentr=0 (not stored), assume standard sign_RphiZ=+1 (gEQDSK default).
-    sign_fpol = int(np.sign(np.nanmean(eqdsk.fpol)))
-    if sign_B0 != 0:
-        sign_RphiZ = sign_fpol * int(sign_B0)
-    else:
-        logger.warning(
-            "bcentr=0, unable to determine sign_RphiZ from F. Assuming +1 (gEQDSK default)."
-        )
-        sign_RphiZ = 1
-
     def _e_Bp(eqdsk):
-        # Detect e_Bp via Grad-Shafranov residual.
+        # Detect e_Bp via the Grad-Shafranov residual.
         # The GS equation for psi in Wb/rad (e_Bp=0) is:
         #   Delta*(psi) = -(mu_0*R^2*pprime + ffprime)
         # If psi is in Weber (e_Bp=1) the same stored pprime/ffprime satisfy:
         #   Delta*(psi) = -(2*pi)^2 * (mu_0*R^2*pprime + ffprime)
-        # Fit alpha such that lhs = alpha * rhs_ebp0: alpha~1 -> e_Bp=0, alpha~(2*pi)^2 -> e_Bp=1.
-        R_1d = np.array(eqdsk.r_grid[:, 0], dtype=float)
-        Z_1d = np.array(eqdsk.z_grid[0, :], dtype=float)
-        psi_2d = np.array(eqdsk.psi, dtype=float)
-        if psi_2d.shape == (len(Z_1d), len(R_1d)):
-            psi_2d = psi_2d.T  # ensure (nR, nZ)
+        # So alpha = lhs / rhs_ebp0 is ~1 for e_Bp=0 and ~(2*pi)^2 for e_Bp=1.
+        # Threshold at the geometric mean of 1 and (2*pi)^2, which is 2*pi.
+        R_1d = np.asarray(eqdsk.r_grid[:, 0], dtype=float)
+        Z_1d = np.asarray(eqdsk.z_grid[0, :], dtype=float)
+        psirz = np.asarray(eqdsk.psirz, dtype=float)
+        # freeqdsk stores psirz as (nR, nZ)
+        # Only transpose a grid that is unambiguously (nZ, nR), square grids are already (nR, nZ).
+        if psirz.shape == (len(Z_1d), len(R_1d)) and psirz.shape != (
+            len(R_1d),
+            len(Z_1d),
+        ):
+            psirz = psirz.T
 
-        dpsi_dR = np.gradient(psi_2d, R_1d, axis=0)
+        simagx = float(eqdsk.simagx)
+        sibdry = float(eqdsk.sibdry)
+
+        # LHS: Delta*(psi) = d2psi/dR2 - (1/R)*dpsi/dR + d2psi/dZ2, evaluated
+        # analytically from a smooth bicubic spline (less noisy than finite differences).
+        psirz_spline = RectBivariateSpline(R_1d, Z_1d, psirz, kx=3, ky=3, s=0)
+        R_2d, Z_2d = np.meshgrid(R_1d, Z_1d, indexing="ij")
         lhs_gs = (
-            np.gradient(dpsi_dR, R_1d, axis=0)
-            - dpsi_dR / R_1d[:, None]
-            + np.gradient(np.gradient(psi_2d, Z_1d, axis=1), Z_1d, axis=1)
+            psirz_spline.ev(R_2d, Z_2d, dx=2, dy=0)
+            - psirz_spline.ev(R_2d, Z_2d, dx=1, dy=0) / R_2d
+            + psirz_spline.ev(R_2d, Z_2d, dx=0, dy=2)
         )
 
-        psi_norm_2d = np.clip(
-            (psi_2d - float(eqdsk.simagx))
-            / (float(eqdsk.sibdry) - float(eqdsk.simagx)),
-            0.0,
-            1.0,
+        # RHS from the stored profiles, mapped over normalized psi (axis=0, boundary=1).
+        # Clipping keeps the np.interp x-axis increasing regardless of psi sign convention.
+        psi_norm_2d = (psirz - simagx) / (sibdry - simagx)
+        psi_norm_1d = np.linspace(0.0, 1.0, len(eqdsk.pprime))
+        pprime_2d = np.interp(
+            np.clip(psi_norm_2d, 0.0, 1.0), psi_norm_1d, np.asarray(eqdsk.pprime, float)
         )
-        pprime_raw = np.array(eqdsk.pprime, dtype=float)
-        ffprime_raw = np.array(eqdsk.ffprime, dtype=float)
-        psi_norm_1d = np.linspace(0.0, 1.0, len(pprime_raw))
-        pprime_2d = np.interp(psi_norm_2d, psi_norm_1d, pprime_raw)
-        ffprime_2d = np.interp(psi_norm_2d, psi_norm_1d, ffprime_raw)
+        ffprime_2d = np.interp(
+            np.clip(psi_norm_2d, 0.0, 1.0),
+            psi_norm_1d,
+            np.asarray(eqdsk.ffprime, float),
+        )
+        rhs_gs = -(mu_0 * R_2d**2 * pprime_2d + ffprime_2d)
 
-        rhs_gs = -(mu_0 * R_1d[:, None] ** 2 * pprime_2d + ffprime_2d)
-
-        sl = np.s_[3:-3, 3:-3]
-        lhs_flat = lhs_gs[sl].ravel()
-        rhs_flat = rhs_gs[sl].ravel()
-        rhs_max = np.max(np.abs(rhs_flat))
+        # Use only the plasma core: away from the magnetic axis (small signal) and the
+        # boundary/X-point (where the spline gradients and GS residual break down).
+        mask = (psi_norm_2d >= 0.05) & (psi_norm_2d <= 0.95)
+        rhs_max = np.max(np.abs(rhs_gs[mask])) if np.any(mask) else 0.0
         if rhs_max == 0:
             return 0
-        mask = np.abs(rhs_flat) > 1e-6 * rhs_max
-        lhs_abs = np.abs(lhs_flat[mask])
-        rhs_abs = np.abs(rhs_flat[mask])
-        # Use the point that jointly maximizes |lhs| * |rhs| to get the ratio.
-        # This biases toward the inner-plasma region where both are large and the
-        # GS equation is best satisfied, avoiding boundary/X-point artifacts.
-        # Threshold at the geometric mean of 1 and (2*pi)^2, which is 2*pi.
-        idx = np.argmax(lhs_abs * rhs_abs)
-        alpha = lhs_abs[idx] / rhs_abs[idx]
-        e_Bp = 0 if alpha < 2 * np.pi else 1
+        mask &= np.abs(rhs_gs) > 0.05 * rhs_max
 
-        return e_Bp
+        # Least-squares slope of lhs vs rhs over the masked core (averages out grid noise).
+        lhs_valid = lhs_gs[mask]
+        rhs_valid = rhs_gs[mask]
+        alpha = np.dot(lhs_valid, rhs_valid) / np.dot(rhs_valid, rhs_valid)
+        logger.debug(f"Grad-Shafranov scaling factor alpha (core): {alpha:.4f}")
+
+        return 0 if alpha < 2 * np.pi else 1
 
     e_Bp = _e_Bp(eqdsk)
 
-    # sign_rhotp is the discharge helicity: sign(Ip * B0).
-    # Using sign(q) is unreliable because some codes store abs(q).
-    # When bcentr=0, infer sign_B0 from fpol under the standard sign_RphiZ=+1 assumption:
-    # F = R*B_phi, so sign_fpol = sign_RphiZ * sign_B0 = sign_B0 when sign_RphiZ=+1.
+    # From Sauter Table I: sign(q) = sign_rhotp * sign(Ip * B0), so
+    # sign_rhotp = sign(q) * sign(Ip) * sign(B0)
+    # With abs(q) (EFIT) sign(q)=+1 and this is just the helicity sign(Ip * B0)
+    # with signed q it recovers sign_rhotp, which is what COCOS conversion encodes (conversion changes only sign(q), not Ip or B0).
+    # When bcentr=0, infer sign_B0 from fpol. With sigma_RphiZ=+1 (geqdsk convention),
+    # F = R*B_phi has the same sign as B0.
     if sign_B0 != 0:
         sign_B0_eff = int(sign_B0)
     else:
-        sign_B0_eff = int(sign_fpol)
-        logger.warning(
-            "bcentr=0, unable to determine sign_B0. Inferring sign_B0=%d from F under the standard sign_RphiZ=+1 assumption."
-        )
-    sign_rhotp = int(sign_Ip) * sign_B0_eff
+        sign_B0_eff = int(np.sign(np.nanmean(eqdsk.fpol)))
+        logger.warning("bcentr=0, inferring sign_B0=%d from fpol" % sign_B0_eff)
+    sign_q = int(np.sign(np.nanmean(np.asarray(eqdsk.qpsi, dtype=float)))) or 1
+    sign_rhotp = sign_q * int(sign_Ip) * sign_B0_eff
 
     # From Table I
     # (e_Bp, sign_Bp, sign_RphiZ, sign_rhotp) -> COCOS number
@@ -253,19 +257,42 @@ def convert_cocos(
         8: (0, -1, -1, +1),
         18: (1, -1, -1, +1),
     }
-    e_Bp_i, sign_Bp_i, sign_RphiZ_i, sign_rhotp_i = cocos_params[cocos_input]
+    e_Bp_i, sign_Bp_i, sign_RphiZ_i, _sign_rhotp_i = cocos_params[cocos_input]
     e_Bp_o, sign_Bp_o, sign_RphiZ_o, sign_rhotp_o = cocos_params[cocos_target]
 
-    # Conversion factors from Sauter 2013, Table III
-    psi_factor = (sign_Bp_o / sign_Bp_i) * (2 * np.pi) ** (e_Bp_o - e_Bp_i)
-    F_factor = sign_RphiZ_o / sign_RphiZ_i
-    # pprime = dp/dpsi; ffprime = F*dF/dpsi -> both scale as 1/psi_factor
-    # (F_factor^2 = 1 always, so the F sign cancels in ffprime)
-    # Some codes store abs(q), so just make sure the sign is consistent with the target
-    qpsi = np.abs(np.array(eqdsk.qpsi, dtype=float)) * sign_rhotp_o
+    # Conversion factors from Sauter 2013, Appendix C Eq. (45).
+    # Pure coordinate conversion (SI to SI, no normalization change):
+    #   sigma_tilde_Ip  = sigma_RphiZ_out * sigma_RphiZ_in   (Eq. 39)
+    #   sigma_tilde_B0  = sigma_RphiZ_out * sigma_RphiZ_in   (Eq. 40)
+    #   sigma_tilde_Bp  = sigma_Bp_out * sigma_Bp_in         (Eq. 41)
+    #   e_tilde_Bp      = e_Bp_out - e_Bp_in                 (Eq. 41)
+    sigma_tilde_Ip = sign_RphiZ_o * sign_RphiZ_i
+    sigma_tilde_B0 = sign_RphiZ_o * sign_RphiZ_i
+    sigma_tilde_Bp = sign_Bp_o * sign_Bp_i
+
+    # psi_out = sigma_tilde_Ip * sigma_tilde_Bp * (2*pi)^(e_Bp_o - e_Bp_i) * psi_in
+    psi_factor = sigma_tilde_Ip * sigma_tilde_Bp * (2 * np.pi) ** (e_Bp_o - e_Bp_i)
+
+    # F_out = sigma_tilde_B0 * F_in (F = R*B_phi depends on phi direction)
+    F_factor = sigma_tilde_B0
+
+    # pprime = dp/dpsi and ffprime = F*dF/dpsi both scale as 1/psi_factor
+    # (sigma_tilde_B0^2 = 1, so F sign cancels in ffprime)
+
+    # I_out = sigma_tilde_Ip * I_in
+    current = float(eqdsk.current) * sigma_tilde_Ip
+    # B_out = sigma_tilde_B0 * B_in
+    bcentr = float(eqdsk.bcentr) * sigma_tilde_B0
+
+    # q: EFIT and many codes store abs(q), so the input sign is unreliable.
+    # Compute the correct sign from Sauter Eq. (22):
+    #   sign(q) = sign(Ip) * sign(B0) * sigma_rhotp
+    # using the already-transformed Ip and B0 for the target COCOS.
+    sign_q_target = int(np.sign(current) * np.sign(bcentr)) * sign_rhotp_o
+    qpsi = np.abs(np.array(eqdsk.qpsi, dtype=float)) * sign_q_target
 
     new_eqdsk = GEQDSKFile(
-        # Unchanged
+        # Unchanged (geometry and pressure are coordinate-independent)
         comment=eqdsk.comment,
         shot=eqdsk.shot,
         nx=eqdsk.nx,
@@ -277,8 +304,6 @@ def convert_cocos(
         zmid=eqdsk.zmid,
         rmagx=eqdsk.rmagx,
         zmagx=eqdsk.zmagx,
-        bcentr=eqdsk.bcentr,
-        cpasma=eqdsk.cpasma,
         pres=eqdsk.pres,
         nbdry=eqdsk.nbdry,
         nlim=eqdsk.nlim,
@@ -287,9 +312,11 @@ def convert_cocos(
         rlim=eqdsk.rlim,
         zlim=eqdsk.zlim,
         # COCOS-dependent
+        bcentr=bcentr,
+        cpasma=current,
         simagx=float(eqdsk.simagx) * psi_factor,
         sibdry=float(eqdsk.sibdry) * psi_factor,
-        psi=np.array(eqdsk.psi, dtype=float) * psi_factor,
+        psi=np.array(eqdsk.psirz, dtype=float) * psi_factor,
         fpol=np.array(eqdsk.fpol, dtype=float) * F_factor,
         ffprime=np.array(eqdsk.ffprime, dtype=float) / psi_factor,
         pprime=np.array(eqdsk.pprime, dtype=float) / psi_factor,
