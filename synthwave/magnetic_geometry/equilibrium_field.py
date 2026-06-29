@@ -288,7 +288,12 @@ def convert_cocos(
     # Compute the correct sign from Sauter Eq. (22):
     #   sign(q) = sign(Ip) * sign(B0) * sigma_rhotp
     # using the already-transformed Ip and B0 for the target COCOS.
-    sign_q_target = int(np.sign(current) * np.sign(bcentr)) * sign_rhotp_o
+    # If bcentr is zero, infer the sign from fpol (which is always nonzero in a valid equilibrium).
+    if bcentr == 0:
+        sign_bcentr = int(np.sign(np.nanmean(eqdsk.fpol))) * sigma_tilde_B0
+    else:
+        sign_bcentr = int(np.sign(bcentr))
+    sign_q_target = int(np.sign(current)) * sign_bcentr * sign_rhotp_o
     qpsi = np.abs(np.array(eqdsk.qpsi, dtype=float)) * sign_q_target
 
     new_eqdsk = GEQDSKFile(
@@ -328,7 +333,9 @@ def convert_cocos(
 
 class EquilibriumField:
     def __init__(self, eqdsk, cocos_input: int | None = None, lam=1e-7):
-        eqdsk = convert_cocos(eqdsk, cocos_target=1, cocos_input=cocos_input)  # Convert to COCOS 1 internally
+        eqdsk = convert_cocos(
+            eqdsk, cocos_target=1, cocos_input=cocos_input
+        )  # Convert to COCOS 1 internally
 
         self.eqdsk = eqdsk
         self.psi = RectBivariateSpline(
