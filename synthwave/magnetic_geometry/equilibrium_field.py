@@ -382,26 +382,25 @@ class EquilibriumField:
             if (psi >= self.psi_grid[0]) and (psi <= self.psi_grid[-1]):
                 return psi
 
-            # If psi is too large, it is past the LCFS and we can't fix it
-            if psi > self.psi_grid[-1]:
+            # Decide by the requested q, not by where Newton landed: an out-of-range q can make
+            # the solver overshoot to either psi bound, so a too-low q can land past the LCFS and
+            # look like a q_max miss. Only raise q_max when q truly exceeds the profile maximum.
+            if q > qpsi_grid[-1]:
                 raise ValueError(
                     "Error: requested q=%1.3f is outside the gEQDSK range (q_max = %1.3f) and was unable to be fixed"
                     % (q, qpsi_grid[-1])
                 )
 
-            # If psi is too small, try to fix
-            if psi < self.psi_grid[0]:
-                if (
-                    np.argwhere(qpsi_grid > (qpsi_grid[0] + 1e-3)).squeeze()[0] > 1
-                ):  # multiple almost-identical q values in a row
-                    lin_interp_q = np.polyfit(self.psi_grid[:30], qpsi_grid[:30], 1)
-                    psi_fixed = self.psi_grid[
-                        np.argmin(
-                            np.abs(np.polyval(lin_interp_q, self.psi_grid[:30]) - q)
-                        )
-                    ]
-                    if psi_fixed >= self.psi_grid[0]:
-                        return psi_fixed
+            # q is below the on-axis value: try to fix when q is stepwise/grouped near the axis
+            if (
+                np.argwhere(qpsi_grid > (qpsi_grid[0] + 1e-3)).squeeze()[0] > 1
+            ):  # multiple almost-identical q values in a row
+                lin_interp_q = np.polyfit(self.psi_grid[:30], qpsi_grid[:30], 1)
+                psi_fixed = self.psi_grid[
+                    np.argmin(np.abs(np.polyval(lin_interp_q, self.psi_grid[:30]) - q))
+                ]
+                if psi_fixed >= self.psi_grid[0]:
+                    return psi_fixed
 
             raise ValueError(
                 "Error: requested q=%1.3f is outside the gEQDSK range (q_min = %1.3f) and was unable to be fixed"
@@ -414,26 +413,23 @@ class EquilibriumField:
             if (psi >= self.psi_grid[-1]) and (psi <= self.psi_grid[0]):
                 return psi
 
-            # If psi is too small, it's outside the LCFS and we can't fix it
-            if psi < self.psi_grid[-1]:
+            # Decide by the requested q, not by where Newton landed (see increasing branch).
+            if q > qpsi_grid[-1]:
                 raise ValueError(
                     "Error: requested q=%1.3f is outside the gEQDSK range (q_max = %1.3f) and was unable to be fixed"
                     % (q, qpsi_grid[-1])
                 )
 
-            # If psi is too large, try to fix
-            if psi > self.psi_grid[0]:
-                if (
-                    np.argwhere(qpsi_grid < (qpsi_grid[0] + 1e-3)).squeeze().size > 1
-                ):  # multiple almost-identical q values in a row
-                    lin_interp_q = np.polyfit(self.psi_grid[:30], qpsi_grid[:30], 1)
-                    psi_fixed = self.psi_grid[
-                        np.argmin(
-                            np.abs(np.polyval(lin_interp_q, self.psi_grid[:30]) - q)
-                        )
-                    ]
-                    if psi_fixed <= self.psi_grid[0]:
-                        return psi_fixed
+            # q is below the on-axis value: try to fix when q is stepwise/grouped near the axis
+            if (
+                np.argwhere(qpsi_grid < (qpsi_grid[0] + 1e-3)).squeeze().size > 1
+            ):  # multiple almost-identical q values in a row
+                lin_interp_q = np.polyfit(self.psi_grid[:30], qpsi_grid[:30], 1)
+                psi_fixed = self.psi_grid[
+                    np.argmin(np.abs(np.polyval(lin_interp_q, self.psi_grid[:30]) - q))
+                ]
+                if psi_fixed <= self.psi_grid[0]:
+                    return psi_fixed
 
             raise ValueError(
                 "Error: requested q=%1.3f is outside the gEQDSK range (q_min = %1.3f) and was unable to be fixed"
