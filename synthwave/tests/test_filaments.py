@@ -139,17 +139,60 @@ class TestToroidalFilamentTracer:
         """Test that specific points are at expected locations."""
         m, n = 2, 1
         R0, Z0, a = 1.8, 0.0, 0.5
-        num_points = 9  # Use 9 points for easy checking. This gives points at 0, π/4, π/2, ..., 2π
+        base_num_points = 9  # Use 9 points for easy checking. This gives points at 0, π/4, π/2, ..., 2π
 
         tracer = ToroidalFilamentTracer(
             (m, n),
             R0=R0,
             Z0=Z0,
             a=a,
-            num_points=num_points,
+            base_num_points=base_num_points,
             scale_points=False,
             prevent_synthetic_structure=False,
             sign_Ip=1,
+            sign_B0=1,
+        )
+        points, etas = tracer.trace()
+
+        R, phi, Z = points[:, 0], points[:, 1], points[:, 2]
+
+        # First point should be at outboard midplane
+        np.testing.assert_allclose(R[0], R0 + a, atol=1e-10)
+        np.testing.assert_allclose(Z[0], Z0, atol=1e-10)
+        np.testing.assert_allclose(phi[0], 0.0, atol=1e-10)
+
+        # Check a few specific points
+        # At 1/4 of the way around poloidal angle (π/2), this should be phi = π
+        quarter_idx = 2
+        expected_R_quarter = R0  # At bottom of circle
+        expected_Z_quarter = Z0 - a
+        np.testing.assert_allclose(R[quarter_idx], expected_R_quarter, atol=1e-10)
+        np.testing.assert_allclose(Z[quarter_idx], expected_Z_quarter, atol=1e-10)
+        np.testing.assert_allclose(phi[quarter_idx], np.pi, atol=1e-10)
+
+        # At 1/2 of the way around poloidal angle (π), this should be phi = 2π
+        half_idx = 4
+        expected_R_half = R0 - a  # At inboard midplane
+        expected_Z_half = Z0
+        np.testing.assert_allclose(R[half_idx], expected_R_half, atol=1e-10)
+        np.testing.assert_allclose(Z[half_idx], expected_Z_half, atol=1e-10)
+        np.testing.assert_allclose(phi[half_idx], 2 * np.pi, atol=1e-10)
+
+    def test_trace_specific_points_2_1_negative_Ip(self):
+        """Test that specific points are at expected locations."""
+        m, n = 2, 1
+        R0, Z0, a = 1.8, 0.0, 0.5
+        base_num_points = 9  # Use 9 points for easy checking. This gives points at 0, π/4, π/2, ..., 2π
+
+        tracer = ToroidalFilamentTracer(
+            (m, n),
+            R0=R0,
+            Z0=Z0,
+            a=a,
+            base_num_points=base_num_points,
+            scale_points=False,
+            prevent_synthetic_structure=False,
+            sign_Ip=-1,
             sign_B0=1,
         )
         points, etas = tracer.trace()
@@ -182,14 +225,14 @@ class TestToroidalFilamentTracer:
         """Test that specific points are at expected locations for m=3, n=2."""
         m, n = 3, 2
         R0, Z0, a = 1.8, 0.0, 0.5
-        num_points = 13  # Use 13 points for easy checking. This gives points at 0, π/6, π/3, ..., 2π
+        base_num_points = 13  # Use 13 points for easy checking. This gives points at 0, π/6, π/3, ..., 2π
 
         tracer = ToroidalFilamentTracer(
             (m, n),
             R0=R0,
             Z0=Z0,
             a=a,
-            num_points=num_points,
+            base_num_points=base_num_points,
             scale_points=False,
             prevent_synthetic_structure=False,
             sign_Ip=1,
@@ -207,7 +250,7 @@ class TestToroidalFilamentTracer:
         # At 1/6 of the way around poloidal angle (π/3), this should be phi = π/2
         sixth_idx = 2
         expected_R_sixth = R0 + a * np.cos(np.pi / 3)
-        expected_Z_sixth = Z0 + a * np.sin(np.pi / 3)
+        expected_Z_sixth = Z0 - a * np.sin(np.pi / 3)
         np.testing.assert_allclose(R[sixth_idx], expected_R_sixth, atol=1e-10)
         np.testing.assert_allclose(Z[sixth_idx], expected_Z_sixth, atol=1e-10)
         np.testing.assert_allclose(phi[sixth_idx], np.pi / 2, atol=1e-10)
