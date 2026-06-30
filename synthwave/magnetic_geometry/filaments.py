@@ -210,16 +210,16 @@ class ToroidalFilamentTracer(FilamentTracer):
             Vertical position of the magnetic axis
         a : float
             Minor radius of the circular cross-section
-        sign_Ip : int, optional
-            Sign of the plasma current, used to determine the direction of the filament in Z. Default is +1.
-        sign_B0 : int, optional
-            Sign of the toroidal magnetic field, used to determine the direction of the filament in R. Default is +1.
         base_num_points : int, optional
             Base number of points to trace around the filament
         scale_points : bool, optional
             Whether to scale the number of points based on m/n ratio. If true, multiplies base_num_points by m/n to ensure adequate resolution.
         prevent_synthetic_structure : bool, optional
             Whether to adjust the number of points to the next prime number to avoid synthetic structures in simulations.
+        sign_Ip : int, optional
+            Sign of the plasma current. Default is +1.
+        sign_B0 : int, optional
+            Sign of the toroidal magnetic field. Default is +1.
         """
         super().__init__(
             mode, int(base_num_points), scale_points, prevent_synthetic_structure

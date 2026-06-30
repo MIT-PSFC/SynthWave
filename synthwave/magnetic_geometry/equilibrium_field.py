@@ -364,12 +364,16 @@ class EquilibriumField:
 
             # q(psi)
             qpsi_spline = make_smoothing_spline(psi_grid, qpsi, lam=lam, axis=0)
+            # |q(psi)|
+            qpsi_abs_spline = make_smoothing_spline(
+                psi_grid, np.abs(qpsi), lam=lam, axis=0
+            )
             # F(psi)
             F_spline = make_smoothing_spline(psi_grid, fpol, lam=lam, axis=0)
 
-            return qpsi_spline, F_spline
+            return qpsi_spline, qpsi_abs_spline, F_spline
 
-        self.qpsi, self.F = _smooth_qpsi_F(eqdsk, self.psi_grid, lam)
+        self.qpsi, self.qpsi_abs, self.F = _smooth_qpsi_F(eqdsk, self.psi_grid, lam)
 
     def get_field_at_point(self, R, Z) -> np.ndarray:
         # Bp = Br + Bz = (d(psi)/dZ - d(psi)/dR) / R
@@ -383,14 +387,14 @@ class EquilibriumField:
         return np.array([Br, Bt, Bz])
 
     def get_psi_of_q(self, q):
-        """Get psi corresponding to a given q. Works in abs(q) space."""
+        """Get psi corresponding to a given q. Works in |q| space."""
         q_abs = np.abs(q)
-        qpsi_grid = np.abs(self.qpsi(self.psi_grid))
+        qpsi_grid = self.qpsi_abs(self.psi_grid)
         psi_guess = self.psi_grid[np.argmin(np.abs(qpsi_grid - q_abs))]
         psi = newton(
-            func=lambda psi: self.qpsi(psi) - q_abs,
+            func=lambda psi: self.qpsi_abs(psi) - q_abs,
             x0=psi_guess,
-            fprime=lambda psi: self.qpsi.derivative(1)(psi),
+            fprime=lambda psi: self.qpsi_abs.derivative(1)(psi),
             maxiter=400,
             tol=1e-3,
         )

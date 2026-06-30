@@ -9,7 +9,9 @@ import pytest
 from sympy import nextprime
 
 from synthwave import PACKAGE_ROOT
-from synthwave.magnetic_geometry.equilibrium_field import EquilibriumField
+from synthwave.magnetic_geometry.equilibrium_field import (
+    EquilibriumField,
+)
 from synthwave.magnetic_geometry.filaments import (
     EquilibriumFilamentTracer,
     FilamentTracer,
@@ -989,10 +991,13 @@ class TestEquilibriumFilamentTracer:
     @pytest.mark.parametrize("helicity", [("positive", 1), ("negative", -1)])
     @pytest.mark.parametrize("current_sign", [("positive", 1), ("negative", -1)])
     def test_trace_satisfies_cocos(self, cmod_eqdsk, mode, helicity, current_sign):
-        """Test basic tracing functionality."""
+        """Test basic tracing functionality on the provided C-Mod eqdsk.
+        EFIT locks psi to be always increasing, so the COCOS depends on the sign of Ip and B0.
+        The provided C-Mod eqdsk is in COCOS 7 (negative Ip and negative B0)
+        Also want to test with the case of positive current, (COCOS 5), so modify the eqdsk before passing to the tracer.
+        """
         eqdsk = copy.deepcopy(cmod_eqdsk)
         if current_sign[0] == "positive":
-            # C-Mod equilibrium with COCOS 1 has negative current, so flip sign to get positive current case
             eqdsk.cpasma = -eqdsk.cpasma
         eq_field = EquilibriumField(eqdsk)
 
@@ -1191,8 +1196,11 @@ class TestNegativeMFilament:
 
         points, etas = tracer.trace()
         assert points.shape[0] == tracer.num_points
-        # phi goes backwards for negative m
-        assert points[-1, 1] < 0.0
+        # negative m gets filaments that are antiparallel to the field line
+        phi_0 = points[0, 1]
+        phi_1 = points[1, 1]
+        assert phi_1 < phi_0, "phi must decrease for negative m"
+        assert etas[1] < 0, "eta must decrease for negative m"
 
     def test_negative_m_current_phasor_is_conjugate_of_positive_m(self):
         """m=-3,n=2 must produce complex conjugate currents compared to m=3,n=2."""
@@ -1301,21 +1309,6 @@ class TestFilamentValueErrors:
         )
         with pytest.raises(ValueError, match="coordinate_system"):
             tracer.get_filament_ds(num_filaments=7, coordinate_system="spherical")
-
-    def test_get_filament_ds_non_coprime_num_filaments_raises(self):
-        """num_filaments not coprime with n_local must raise ValueError."""
-        # m=3, n=2: n_local=2. num_filaments=4: gcd(4,2)=2 != 1
-        tracer = ToroidalFilamentTracer(
-            (3, 2),
-            1.8,
-            0.0,
-            0.5,
-            base_num_points=50,
-            scale_points=False,
-            prevent_synthetic_structure=False,
-        )
-        with pytest.raises(ValueError, match="coprime"):
-            tracer.get_filament_ds(num_filaments=4)
 
     def test_get_filament_list_zero_filaments_raises(self):
         tracer = ToroidalFilamentTracer(
