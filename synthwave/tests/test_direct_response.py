@@ -74,8 +74,7 @@ def direct_response_inputs(sensor_details):
     eq_field = EquilibriumField(eqdsk)
 
     tracer = EquilibriumFilamentTracer(
-        _MODE[0],
-        _MODE[1],
+        _MODE,
         eq_field=eq_field,
         base_num_points=_BASE_NUM_POINTS,
         default_trace_type=EquilibriumFilamentTracer.TraceType.SINGLE,

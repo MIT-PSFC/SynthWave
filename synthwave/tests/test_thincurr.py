@@ -147,8 +147,7 @@ def test_toroidal_angles(mode, oft_env_fixture):
 
     with tempfile.TemporaryDirectory() as working_directory:
         toroidal_tracer = ToroidalFilamentTracer(
-            mode["m"],
-            mode["n"],
+            (mode["m"], mode["n"]),
             major_radius,
             0,
             minor_radius_plasma,
@@ -350,8 +349,7 @@ def test_direct_response_thincurr_matches_frequency_response(oft_env_fixture):
     )
 
     toroidal_tracer = ToroidalFilamentTracer(
-        mode["m"],
-        mode["n"],
+        (mode["m"], mode["n"]),
         major_radius,
         0.0,
         minor_radius_plasma,

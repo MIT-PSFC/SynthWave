@@ -21,14 +21,13 @@ class FilamentTracer(ABC):
 
     def __init__(
         self,
-        m: int,
-        n: int,
+        mode: tuple[int, int],
         base_num_points: Optional[int] = 800,
         scale_points: Optional[bool] = True,
         prevent_synthetic_structure: Optional[bool] = True,
     ):
-        self.m = m
-        self.n = n
+        self.m = mode[0]
+        self.n = mode[1]
 
         num_points = base_num_points
         if scale_points:
@@ -188,26 +187,23 @@ class ToroidalFilamentTracer(FilamentTracer):
 
     def __init__(
         self,
-        m: int,
-        n: int,
+        mode: tuple[int, int],
         R0: float,
         Z0: float,
         a: float,
-        sign_Ip: Optional[int] = 1,
-        sign_B0: Optional[int] = 1,
         base_num_points: Optional[int] = 1000,
         scale_points: Optional[bool] = True,
         prevent_synthetic_structure: Optional[bool] = True,
+        sign_Ip: Optional[int] = 1,
+        sign_B0: Optional[int] = 1,
     ):
         """Initialize a toroidal filament with a circular cross-section.
         Follows COCOS 1 convention for tracing.
 
         Parameters
         ----------
-        m : int
-            Poloidal mode number
-        n : int
-            Toroidal mode number
+        mode : tuple[int, int]
+            Mode number (m, n)
         R0 : float
             Major radius of the magnetic axis
         Z0 : float
@@ -226,7 +222,7 @@ class ToroidalFilamentTracer(FilamentTracer):
             Whether to adjust the number of points to the next prime number to avoid synthetic structures in simulations.
         """
         super().__init__(
-            m, n, int(base_num_points), scale_points, prevent_synthetic_structure
+            mode, int(base_num_points), scale_points, prevent_synthetic_structure
         )
         self.R0 = R0
         self.Z0 = Z0
@@ -274,8 +270,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
 
     def __init__(
         self,
-        m: int,
-        n: int,
+        mode: tuple[int, int],
         eq_field: EquilibriumField,
         base_num_points: Optional[int] = 601,
         scale_points: Optional[bool] = True,
@@ -287,10 +282,8 @@ class EquilibriumFilamentTracer(FilamentTracer):
 
         Parameters
         ----------
-        m : int
-            Poloidal mode number
-        n : int
-            Toroidal mode number
+        mode : tuple[int, int]
+            Mode number (m, n)
         eq_field : EquilibriumField
             EquilibriumField object containing the magnetic field data
         base_num_points : int, optional
@@ -308,8 +301,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
 
         """
         super().__init__(
-            m,
-            n,
+            mode,
             int(base_num_points),
             scale_points,
             prevent_synthetic_structure,
@@ -317,7 +309,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
         self.eq_field = eq_field
         self.default_trace_type = default_trace_type
         self.helicity_sign = (
-            helicity_sign if helicity_sign is not None else (1 if m >= 0 else -1)
+            helicity_sign if helicity_sign is not None else (1 if self.m >= 0 else -1)
         )
         self.trace_cache = {}
 

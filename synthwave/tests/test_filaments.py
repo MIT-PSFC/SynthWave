@@ -40,14 +40,15 @@ class TestToroidalFilamentTracer:
         base_num_points = 100
 
         tracer = ToroidalFilamentTracer(
-            m,
-            n,
-            R0,
-            Z0,
-            a,
-            base_num_points,
+            (m, n),
+            R0=R0,
+            Z0=Z0,
+            a=a,
+            base_num_points=base_num_points,
             scale_points=scale_points,
             prevent_synthetic_structure=prevent_synthetic_structure,
+            sign_Ip=1,
+            sign_B0=1,
         )
 
         assert tracer.m == m
@@ -73,14 +74,15 @@ class TestToroidalFilamentTracer:
         base_num_points = 100
 
         filament = ToroidalFilamentTracer(
-            m,
-            n,
-            R0,
-            Z0,
-            a,
-            base_num_points,
+            (m, n),
+            R0=R0,
+            Z0=Z0,
+            a=a,
+            base_num_points=base_num_points,
             scale_points=scale_points,
             prevent_synthetic_structure=prevent_synthetic_structure,
+            sign_Ip=1,
+            sign_B0=1,
         )
         points, etas = filament.trace()
 
@@ -105,14 +107,15 @@ class TestToroidalFilamentTracer:
         base_num_points = 100
 
         tracer = ToroidalFilamentTracer(
-            m,
-            n,
-            R0,
-            Z0,
-            a,
-            base_num_points,
+            (m, n),
+            R0=R0,
+            Z0=Z0,
+            a=a,
+            base_num_points=base_num_points,
             scale_points=False,
             prevent_synthetic_structure=False,
+            sign_Ip=1,
+            sign_B0=1,
         )
         points, etas = tracer.trace()
 
@@ -139,14 +142,15 @@ class TestToroidalFilamentTracer:
         num_points = 9  # Use 9 points for easy checking. This gives points at 0, π/4, π/2, ..., 2π
 
         tracer = ToroidalFilamentTracer(
-            m,
-            n,
-            R0,
-            Z0,
-            a,
-            num_points,
+            (m, n),
+            R0=R0,
+            Z0=Z0,
+            a=a,
+            num_points=num_points,
             scale_points=False,
             prevent_synthetic_structure=False,
+            sign_Ip=1,
+            sign_B0=1,
         )
         points, etas = tracer.trace()
 
@@ -181,14 +185,15 @@ class TestToroidalFilamentTracer:
         num_points = 13  # Use 13 points for easy checking. This gives points at 0, π/6, π/3, ..., 2π
 
         tracer = ToroidalFilamentTracer(
-            m,
-            n,
-            R0,
-            Z0,
-            a,
-            num_points,
+            (m, n),
+            R0=R0,
+            Z0=Z0,
+            a=a,
+            num_points=num_points,
             scale_points=False,
             prevent_synthetic_structure=False,
+            sign_Ip=1,
+            sign_B0=1,
         )
         points, etas = tracer.trace()
 
@@ -221,14 +226,15 @@ class TestToroidalFilamentTracer:
         R0, Z0, a = 2.0, 0.0, 0.5
 
         tracer = ToroidalFilamentTracer(
-            m,
-            n,
-            R0,
-            Z0,
-            a,
+            (m, n),
+            R0=R0,
+            Z0=Z0,
+            a=a,
             base_num_points=100,
             scale_points=False,
             prevent_synthetic_structure=False,
+            sign_Ip=1,
+            sign_B0=1,
         )
 
         # Test with default number of points
@@ -283,7 +289,13 @@ class TestToroidalFilamentTracer:
             os.makedirs(fig_dir)
 
         toroidal_tracer = ToroidalFilamentTracer(
-            mode["m"], mode["n"], major_radius, 0, minor_radius, base_num_points=100
+            (mode["m"], mode["n"]),
+            R0=major_radius,
+            Z0=0,
+            a=minor_radius,
+            base_num_points=100,
+            sign_Ip=1,
+            sign_B0=1,
         )
 
         filament_ds = toroidal_tracer.get_filament_ds(
@@ -490,7 +502,13 @@ class TestToroidalFilamentTracer:
             os.makedirs(fig_dir)
 
         toroidal_tracer = ToroidalFilamentTracer(
-            mode["m"], mode["n"], major_radius, 0, minor_radius, base_num_points=100
+            (mode["m"], mode["n"]),
+            R0=major_radius,
+            Z0=0,
+            a=minor_radius,
+            base_num_points=100,
+            sign_Ip=1,
+            sign_B0=1,
         )
 
         filament_ds = toroidal_tracer.get_filament_ds(
@@ -571,8 +589,7 @@ class TestEquilibriumFilamentTracer:
         m, n = 2, 1
         base_num_points = 100
         tracer = EquilibriumFilamentTracer(
-            m,
-            n,
+            (m, n),
             eq_field,
             base_num_points,
             scale_points=scale_points,
@@ -600,8 +617,7 @@ class TestEquilibriumFilamentTracer:
         m, n = 2, 1
         base_num_points = 100
         tracer = EquilibriumFilamentTracer(
-            m,
-            n,
+            (m, n),
             eq_field,
             base_num_points=base_num_points,
             scale_points=scale_points,
@@ -644,7 +660,7 @@ class TestEquilibriumFilamentTracer:
             os.makedirs(fig_dir)
 
         equilibrium_tracer = EquilibriumFilamentTracer(
-            mode["m"], mode["n"], eq_field, base_num_points=100
+            (mode["m"], mode["n"]), eq_field, base_num_points=100
         )
 
         filament_ds = equilibrium_tracer.get_filament_ds(
@@ -854,7 +870,7 @@ class TestEquilibriumFilamentTracer:
             os.makedirs(fig_dir)
 
         equilibrium_tracer = EquilibriumFilamentTracer(
-            mode["m"], mode["n"], eq_field, base_num_points=200
+            (mode["m"], mode["n"]), eq_field, base_num_points=200
         )
 
         filament_ds = equilibrium_tracer.get_filament_ds(
@@ -939,8 +955,7 @@ class TestEquilibriumFilamentTracer:
 
         base_num_points = 100
         tracer = EquilibriumFilamentTracer(
-            mode["m"] * helicity[1],
-            mode["n"],
+            (mode["m"] * helicity[1], mode["n"]),
             eq_field,
             base_num_points=base_num_points,
             scale_points=False,
@@ -996,14 +1011,11 @@ class TestAllFilamentTracers:
         self, cmod_eqdsk, tracer_class: FilamentTracer, extra_args, mode
     ):
         """For every point, ensure its nearest neighbor has the same current and belongs to the same filament"""
+        mode_tuple = (mode["m"], mode["n"])
         if tracer_class is EquilibriumFilamentTracer:
-            tracer_args = (
-                mode["m"],
-                mode["n"],
-                EquilibriumField(cmod_eqdsk),
-            ) + extra_args
+            tracer_args = (mode_tuple, EquilibriumField(cmod_eqdsk)) + extra_args
         else:
-            tracer_args = (mode["m"], mode["n"]) + extra_args
+            tracer_args = (mode_tuple,) + extra_args
         tracer = tracer_class(*tracer_args)
         filament_ds = tracer.get_filament_ds(
             num_filaments=7, coordinate_system="cartesian"
@@ -1063,11 +1075,11 @@ class TestAllFilamentTracers:
         """
         if tracer_class is EquilibriumFilamentTracer:
             eq_field = EquilibriumField(cmod_eqdsk)
-            tracer_args_pos = (mode["m"], mode["n"], eq_field) + extra_args
-            tracer_args_neg = (-mode["m"], mode["n"], eq_field) + extra_args
+            tracer_args_pos = ((mode["m"], mode["n"]), eq_field) + extra_args
+            tracer_args_neg = ((-mode["m"], mode["n"]), eq_field) + extra_args
         else:
-            tracer_args_pos = (mode["m"], mode["n"]) + extra_args
-            tracer_args_neg = (-mode["m"], mode["n"]) + extra_args
+            tracer_args_pos = ((mode["m"], mode["n"]),) + extra_args
+            tracer_args_neg = ((-mode["m"], mode["n"]),) + extra_args
         tracer_pos = tracer_class(*tracer_args_pos)
         filament_pos_ds = tracer_pos.get_filament_ds(
             num_filaments=7, coordinate_system="cylindrical"
@@ -1114,14 +1126,13 @@ class TestNegativeMFilament:
         self, base_num_points, scale_points, prevent_synthetic_structure
     ):
         """ToroidalFilamentTracer with negative m and scale_points must not produce degenerate num_points."""
-        m, n = -3, 2
+        mode = (-3, 2)
         R0, Z0, a = 1.8, 0.0, 0.5
         tracer = ToroidalFilamentTracer(
-            m,
-            n,
-            R0,
-            Z0,
-            a,
+            mode,
+            R0=R0,
+            Z0=Z0,
+            a=a,
             base_num_points=base_num_points,
             scale_points=scale_points,
             prevent_synthetic_structure=prevent_synthetic_structure,
@@ -1130,7 +1141,7 @@ class TestNegativeMFilament:
         assert tracer.num_points >= 2, "num_points must be > 2"
         expected = base_num_points
         if scale_points:
-            expected = int(base_num_points * abs(m) / n)
+            expected = int(base_num_points * abs(mode[0]) / mode[1])
         if prevent_synthetic_structure:
             expected = nextprime(expected)
         assert tracer.num_points == expected
@@ -1145,8 +1156,8 @@ class TestNegativeMFilament:
         R0, Z0, a = 1.8, 0.0, 0.5
         num_filaments = 7
 
-        pos_tracer = ToroidalFilamentTracer(3, 2, R0, Z0, a, base_num_points=100)
-        neg_tracer = ToroidalFilamentTracer(-3, 2, R0, Z0, a, base_num_points=100)
+        pos_tracer = ToroidalFilamentTracer((3, 2), R0, Z0, a, base_num_points=100)
+        neg_tracer = ToroidalFilamentTracer((-3, 2), R0, Z0, a, base_num_points=100)
 
         pos_ds = pos_tracer.get_filament_ds(num_filaments=num_filaments)
         neg_ds = neg_tracer.get_filament_ds(num_filaments=num_filaments)
@@ -1163,8 +1174,7 @@ class TestNegativeMFilament:
         m, n = 3, 2
 
         tracer_pos = EquilibriumFilamentTracer(
-            m,
-            n,
+            (m, n),
             eq_field,
             base_num_points=101,
             scale_points=False,
@@ -1172,8 +1182,7 @@ class TestNegativeMFilament:
             helicity_sign=1,
         )
         tracer_neg = EquilibriumFilamentTracer(
-            m,
-            n,
+            (m, n),
             eq_field,
             base_num_points=101,
             scale_points=False,
@@ -1209,8 +1218,7 @@ class TestFilamentValueErrors:
 
     def test_get_filament_ds_zero_filaments_raises(self):
         tracer = ToroidalFilamentTracer(
-            2,
-            1,
+            (2, 1),
             1.8,
             0.0,
             0.5,
@@ -1225,8 +1233,7 @@ class TestFilamentValueErrors:
 
     def test_get_filament_ds_negative_filaments_raises(self):
         tracer = ToroidalFilamentTracer(
-            2,
-            1,
+            (2, 1),
             1.8,
             0.0,
             0.5,
@@ -1241,8 +1248,7 @@ class TestFilamentValueErrors:
 
     def test_get_filament_ds_invalid_coordinate_system_raises(self):
         tracer = ToroidalFilamentTracer(
-            2,
-            1,
+            (2, 1),
             1.8,
             0.0,
             0.5,
@@ -1257,8 +1263,7 @@ class TestFilamentValueErrors:
         """num_filaments not coprime with n_local must raise ValueError."""
         # m=3, n=2: n_local=2. num_filaments=4: gcd(4,2)=2 != 1
         tracer = ToroidalFilamentTracer(
-            3,
-            2,
+            (3, 2),
             1.8,
             0.0,
             0.5,
@@ -1271,8 +1276,7 @@ class TestFilamentValueErrors:
 
     def test_get_filament_list_zero_filaments_raises(self):
         tracer = ToroidalFilamentTracer(
-            2,
-            1,
+            (2, 1),
             1.8,
             0.0,
             0.5,
@@ -1287,8 +1291,7 @@ class TestFilamentValueErrors:
 
     def test_get_filament_list_invalid_coordinate_system_raises(self):
         tracer = ToroidalFilamentTracer(
-            2,
-            1,
+            (2, 1),
             1.8,
             0.0,
             0.5,
