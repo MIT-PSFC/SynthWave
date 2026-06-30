@@ -383,11 +383,12 @@ class EquilibriumField:
         return np.array([Br, Bt, Bz])
 
     def get_psi_of_q(self, q):
-        """Get psi corresponding to a given q"""
-        qpsi_grid = self.qpsi(self.psi_grid)
-        psi_guess = self.psi_grid[np.argmin(np.abs(qpsi_grid - q))]
+        """Get psi corresponding to a given q. Works in abs(q) space."""
+        q_abs = np.abs(q)
+        qpsi_grid = np.abs(self.qpsi(self.psi_grid))
+        psi_guess = self.psi_grid[np.argmin(np.abs(qpsi_grid - q_abs))]
         psi = newton(
-            func=lambda psi: self.qpsi(psi) - q,
+            func=lambda psi: self.qpsi(psi) - q_abs,
             x0=psi_guess,
             fprime=lambda psi: self.qpsi.derivative(1)(psi),
             maxiter=400,
@@ -395,7 +396,7 @@ class EquilibriumField:
         )
 
         # psi
-        psi = self.core_psi_consistency_check(qpsi_grid, psi, q)
+        psi = self.core_psi_consistency_check(qpsi_grid, psi, q_abs)
 
         return psi
 
@@ -416,18 +417,18 @@ class EquilibriumField:
             if (psi >= self.psi_grid[0]) and (psi <= self.psi_grid[-1]):
                 return psi
 
-            # Decide by the requested q, not by where Newton landed: an out-of-range q can make
-            # the solver overshoot to either psi bound, so a too-low q can land past the LCFS and
-            # look like a q_max miss. Only raise q_max when q truly exceeds the profile maximum.
-            if q > qpsi_grid[-1]:
+            q_max = np.max(qpsi_grid)
+
+            # Past LCFS: only raise q_max when q truly exceeds the profile maximum.
+            if psi > self.psi_grid[-1] and q > q_max:
                 raise ValueError(
                     "Error: requested q=%1.3f is outside the gEQDSK range (q_max = %1.3f) and was unable to be fixed"
-                    % (q, qpsi_grid[-1])
+                    % (q, q_max)
                 )
 
-            # q is below the on-axis value: try to fix when q is stepwise/grouped near the axis
+            # Past axis (or LCFS with q in range): try to fix when q is stepwise/grouped near the axis
             if (
-                np.argwhere(qpsi_grid > (qpsi_grid[0] + 1e-3)).squeeze()[0] > 1
+                np.argwhere(qpsi_grid < (qpsi_grid[0] + 1e-3)).squeeze().size > 1
             ):  # multiple almost-identical q values in a row
                 lin_interp_q = np.polyfit(self.psi_grid[:30], qpsi_grid[:30], 1)
                 psi_fixed = self.psi_grid[
@@ -448,10 +449,11 @@ class EquilibriumField:
                 return psi
 
             # Decide by the requested q, not by where Newton landed (see increasing branch).
-            if q > qpsi_grid[-1]:
+            q_max = np.max(qpsi_grid)
+            if psi < self.psi_grid[-1] and q > q_max:
                 raise ValueError(
                     "Error: requested q=%1.3f is outside the gEQDSK range (q_max = %1.3f) and was unable to be fixed"
-                    % (q, qpsi_grid[-1])
+                    % (q, q_max)
                 )
 
             # q is below the on-axis value: try to fix when q is stepwise/grouped near the axis
