@@ -7,7 +7,11 @@ from typing import Optional
 import numpy as np
 import xarray as xr
 from loguru import logger
-from OpenFUSIONToolkit.ThinCurr.sensor import Mirnov, save_sensors
+
+try: from OpenFUSIONToolkit.ThinCurr.sensor import Mirnov, save_sensors
+except (ImportError, FileNotFoundError):
+    Mirnov = None
+    save_sensors = None
 
 
 def gen_OFT_filament_and_eta_file(

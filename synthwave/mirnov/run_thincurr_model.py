@@ -6,8 +6,13 @@ import numpy as np
 import pyvista
 import vtk
 import xarray as xr
-from OpenFUSIONToolkit import OFT_env
-from OpenFUSIONToolkit.ThinCurr import ThinCurr
+try: 
+    from OpenFUSIONToolkit import OFT_env
+    from OpenFUSIONToolkit.ThinCurr import ThinCurr
+except (ImportError, FileNotFoundError):
+    OFT_env = None
+    ThinCurr = None
+
 
 from synthwave.magnetic_geometry.filaments import FilamentTracer
 
