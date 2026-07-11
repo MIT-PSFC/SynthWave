@@ -18,6 +18,35 @@ from synthwave.magnetic_geometry.equilibrium_field import (
 from synthwave.magnetic_geometry.utils import cylindrical_to_cartesian
 
 
+def _average_phi0_poloidal_arc_spacing(
+    all_filament_points: np.ndarray,
+    atol: float = 0.15,
+) -> tuple[float, list[float]]:
+    """Estimate average poloidal arc spacing from filament crossings near phi=0."""
+    rz = all_filament_points[0][:, [0, 2]]
+    segment_lengths = np.sqrt(np.sum(np.diff(rz, axis=0) ** 2, axis=1))
+    arc = np.concatenate(([0.0], np.cumsum(segment_lengths)))
+    total_arc = arc[-1]
+    if not np.allclose(rz[0], rz[-1]):
+        total_arc += float(np.linalg.norm(rz[0] - rz[-1]))
+
+    tor = all_filament_points[:, :, 1]
+    phi0_crossings = np.argwhere(np.abs(np.angle(np.exp(1j * tor))) <= atol)
+
+    crossing_arcs = []
+    for filament_idx in np.unique(phi0_crossings[:, 0]):
+        point_idxs = phi0_crossings[phi0_crossings[:, 0] == filament_idx, 1]
+        for group in np.split(point_idxs, np.where(np.diff(point_idxs) > 1)[0] + 1):
+            point_idx = group[np.argmin(np.abs(np.angle(np.exp(1j * tor[filament_idx, group]))))]
+            if filament_idx == 0 and point_idx == tor.shape[1] - 1:
+                continue
+            crossing_arcs.append(arc[point_idx] % total_arc)
+
+    crossing_arcs = np.sort(crossing_arcs)
+    arc_distances = np.diff(np.r_[crossing_arcs, crossing_arcs[0] + total_arc])
+    return float(np.mean(arc_distances)), arc_distances.tolist()
+
+
 def _solve_root_with_adaptive_bracket(
     f,
     x0: float,
@@ -179,6 +208,10 @@ class FilamentTracer(ABC):
             :, np.newaxis
         ]  # Apply toroidal offsets
 
+        average_poloidal_arc_spacing, poloidal_arc_spacing_distances = (
+            _average_phi0_poloidal_arc_spacing(all_filament_points)
+        )
+
         # Complex currents for rotating wave: I(phi) = I_0 * exp(i*sign(m)*n*phi)
         # The sign of m determines the direction of the rotating wave
         m_sign = int(np.sign(ratio.numerator)) if ratio.numerator != 0 else 1
@@ -227,6 +260,10 @@ class FilamentTracer(ABC):
                     "point": np.arange(len(filament_etas)),
                 },
             )
+
+        ds.attrs["average_poloidal_arc_spacing"] = average_poloidal_arc_spacing
+        ds.attrs["poloidal_arc_spacing_distances"] = poloidal_arc_spacing_distances
+        ds.attrs["poloidal_arc_spacing_metric"] = "arc_length_between_phi0_crossings"
 
         return ds
 

@@ -3,19 +3,15 @@
 from diagnostic_header import (
     EquilibriumField,
     EquilibriumFilamentTracer,
+    build_geqdsk,
+    build_sensor_details_compat,
+    config,
     convert_cocos,
+    direct_response_biot_savart,
+    normalize_eq_field_dataset,
     np,
     plt,
     xr,
-)
-from tars.config import config
-from tars.out_of_scope.chisq_fast.sensor_helpers import (
-    build_sensor_details_compat,
-    normalize_eq_field_dataset,
-)
-from tars.reconstruct.utils import (
-    build_geqdsk,
-    direct_response_biot_savart,
 )
 
 
@@ -49,6 +45,7 @@ def plot_filament_geometry(ds_shot_path, eq_time_idx, modes, doSave):
         filament_list, current_list = tracer.get_filament_list(
             num_filaments=config.direct_response_filaments,
             coordinate_system="cartesian",
+            trace_type=EquilibriumFilamentTracer.TraceType.FIELD
         )
 
         filament_lists.append(filament_list)
@@ -158,9 +155,10 @@ if __name__ == "__main__":
     # ds_shot_path = "/mnt/home/rianc/Documents/TARS/tars/scratch/input_data/179118.nc"
     # ds_shot_path = "/mnt/home/rianc/Documents/TARS/tars/scratch/input_data/1120906030.nc"
     # eq_time_idx = 1200#23000
-    ds_shot_path = "/mnt/home/rianc/Documents/TARS/tars/scratch/input_data/175028.nc"
+    # ds_shot_path = "/mnt/home/rianc/Documents/TARS/tars/scratch/input_data/175028.nc"
+    ds_shot_path = "/fusion/projects/disruption_warning/data/tmdb/laszlo_compare/IDA_shots/174956.nc"
     eq_time_idx = 1500  # 23000
-    modes = [(2, 1), (4, 1)]
+    modes = [(3, 2), (4, 1)]
 
     doSave = "../Synthetic_Mirnov/output_plots/"
     plot_filament_geometry(ds_shot_path, eq_time_idx, modes, doSave)
