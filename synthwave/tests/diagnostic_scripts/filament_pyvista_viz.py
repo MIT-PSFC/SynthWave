@@ -51,62 +51,86 @@ def get_sensor_positions(ds_eq_time: xr.Dataset):
 
 
 def plot_filament_phase_comparison(
-    mode, filament_list, current_list, sensor_positions, sensor_names, save_path
+    mode,
+    filament_list,
+    current_list,
+    sensor_positions,
+    sensor_names,
+    save_path,
+    doublePlot=False,
+    showFilaments=False,
 ):
     pyvista.OFF_SCREEN = False
-    plotter = pyvista.Plotter(shape=(1, 2), off_screen=False, window_size=(1600, 400))
 
-    phase_labels = ["Cosine phase", "Sine phase"]
-    phase_values = [0.0, np.pi / 2]
+    phase_labels = (
+        ["Cosine phase", "Sine phase"]
+        if doublePlot
+        else ["Sensor Locations for ModeSpec"]
+    )
+    phase_values = [0.0, np.pi / 2] if doublePlot else [0]
+
+    plotter = pyvista.Plotter(
+        shape=(1, 2 if doublePlot else 1),
+        off_screen=False,
+        window_size=(1600 if doublePlot else 800, 400),
+    )
+
     cmap = "coolwarm"
     current_scalar_name = "phase_current"
 
     for index, (label, phase) in enumerate(zip(phase_labels, phase_values)):
         plotter.subplot(0, index)
         plotter.add_text(label, font_size=14, position="upper_left")
+        if showFilaments:
+            for filament, current in zip(filament_list, current_list):
+                pts = np.asarray(filament, dtype=float)
+                values = np.full(pts.shape[0], np.real(current * np.exp(1j * phase)))
+                spline = pyvista.Spline(pts, len(pts))
+                spline[current_scalar_name] = values
+                tube = spline.tube(radius=0.005 * 4)
+                plotter.add_mesh(
+                    tube,
+                    scalars=current_scalar_name,
+                    cmap=cmap,
+                    scalar_bar_args={"title": "Current [A]", "vertical": True},
+                    opacity=1.0,
+                )
 
-        for filament, current in zip(filament_list, current_list):
-            pts = np.asarray(filament, dtype=float)
-            values = np.full(pts.shape[0], np.real(current * np.exp(1j * phase)))
-            spline = pyvista.Spline(pts, len(pts))
-            spline[current_scalar_name] = values
-            tube = spline.tube(radius=0.005 * 4)
-            plotter.add_mesh(
-                tube,
-                scalars=current_scalar_name,
-                cmap=cmap,
-                scalar_bar_args={"title": "Current [A]", "vertical": True},
-                opacity=1.0,
-            )
-
-        plotter.add_points(
-            sensor_positions,
-            color="black",
+    inds = [
+        ind
+        for ind in range(len(sensor_names))
+        if ("MPI66" in sensor_names[ind] or "322" in sensor_names[ind])
+    ]
+    plotter.add_points(
+        sensor_positions[inds],
+        color="black",
+        point_size=20,
+        render_points_as_spheres=True,
+        label="Sensors",
+    )
+    if sensor_names is not None:
+        plotter.add_point_labels(
+            sensor_positions[inds],
+            [str(name) for name in sensor_names[inds]],
+            font_size=10,
             point_size=20,
-            render_points_as_spheres=True,
-            label="Sensors",
+            text_color="black",
+            shape_opacity=0.0,
+            always_visible=True,
         )
-        if sensor_names is not None:
-            plotter.add_point_labels(
-                sensor_positions,
-                [str(name) for name in sensor_names],
-                font_size=10,
-                point_size=20,
-                text_color="black",
-                shape_opacity=0.0,
-                always_visible=True,
-            )
 
-        plotter.view_isometric()
-        plotter.show_axes()
+    plotter.view_isometric()
+    plotter.show_axes()
 
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     plotter.link_views()
     # plotter.screenshot(save_path)
     plotter.camera.elevation -= 5
+    plotter.camera.azimuth = 45
     pos = plotter.camera.position
     # plotter.camera.zoom('tight')
-    plotter.camera.position = np.array(pos) * 0.5
+    plotter.camera.position = np.array(pos) * 0.65
+
     plotter.save_graphic(save_path)
     plotter.show()
 
@@ -120,7 +144,7 @@ def plot_filament_phase_comparison(
 def plot_modes_filaments(ds_shot_path, eq_time_s, modes, output_dir, save_ext=""):
     ds_shot = xr.open_dataset(ds_shot_path)
     eq_time_idx = np.argmin(np.abs(ds_shot.time.values - eq_time_s))
-    ds_eq_time = ds_shot.sel(idx=eq_time_idx)
+    ds_eq_time = ds_shot.sel(time_idx=eq_time_idx)
     eq_field = build_equilibrium_field(ds_eq_time)
     sensor_positions, sensor_names = get_sensor_positions(ds_eq_time)
 
@@ -140,13 +164,16 @@ if __name__ == "__main__":
     # eq_time_idx = 23000
     # ds_shot_path = "/mnt/home/rianc/Documents/TARS/tars/scratch/input_data/1120906030.nc"
     # eq_time_idx = 1200#23000
-    ds_shot_path = "/mnt/home/rianc/Documents/TARS/tars/scratch/input_data/174956.nc"
+    # ds_shot_path = "/mnt/home/rianc/Documents/TARS/tars/scratch/input_data/174956.nc"
+    ds_shot_path = (
+        "/mnt/home/rianc/Documents/TARS/tars/scratch/input_data/tars_input_180516.nc"
+    )
     eq_time_s = 2.5  # 23000
-    modes = [(2, 1)]
+    modes = [(5, 1)]
     output_dir = os.path.abspath(
         os.path.join(
             os.path.dirname(__file__), "..", "..", "output_plots", "filament_pyvista"
         )
     )
-    save_ext = "_NewPhiCorrection"
+    save_ext = "_DIII_D_Sensors_Only"
     plot_modes_filaments(ds_shot_path, eq_time_s, modes, output_dir, save_ext)
