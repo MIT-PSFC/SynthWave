@@ -9,6 +9,7 @@ C++ objects (ThinCurr, OFT_env) are finalized before the next test runs.
 import gc
 
 import pytest
+from OpenFUSIONToolkit import OFT_env
 
 
 def pytest_configure(config):
@@ -27,3 +28,9 @@ def _serial_gc(request):
     yield
     if request.node.get_closest_marker("serial"):
         gc.collect()
+
+
+# Fixture for OFT environment so only one is created for all tests.
+@pytest.fixture(scope="session")
+def oft_env():
+    return OFT_env(nthreads=2)

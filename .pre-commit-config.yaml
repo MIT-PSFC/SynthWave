@@ -10,19 +10,19 @@ repos:
         entry: uv run jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace
       - id: ruff_format
         name: ruff_format 
-        entry: uv run ruff format
+        entry: uv run --no-sync ruff format
         language: system
         types: [python]
         files: "^synthwave/"
       - id: ruff_check
         name: ruff_check
-        entry: uv run ruff check --fix
+        entry: uv run --no-sync ruff check --fix
         language: system
         types: [python]
         files: "^synthwave/"
       - id: isort
         name: isort
-        entry: uv run isort
+        entry: uv run --no-sync isort
         language: system
         types: [python]
         files: "^synthwave/"

@@ -17,7 +17,6 @@ import freeqdsk
 import numpy as np
 import pytest
 import xarray as xr
-from OpenFUSIONToolkit import OFT_env
 
 from synthwave import PACKAGE_ROOT
 from synthwave.magnetic_geometry.equilibrium_field import (
@@ -35,7 +34,10 @@ from synthwave.mirnov.synthetic_signal import (
     direct_response_thincurr,
 )
 
-# ThinCurr / OFT_env hold global C++ state that cannot be shared across workers
+# All tests in this file use the OpenFUSIONToolkit C++ library which has
+# global state (OFT_env, ThinCurr) that cannot be shared across concurrent
+# workers.  Mark the entire module serial so the conftest fixture forces
+# sequential execution and GC cleanup between tests.
 pytestmark = pytest.mark.serial
 
 _CMOD_DIR = os.path.join(PACKAGE_ROOT, "input_data", "cmod")
@@ -46,11 +48,6 @@ _CMOD_SENSORS_FILE = os.path.join(_CMOD_DIR, "sensor_details_C_MOD_ALL.nc")
 _MODE = (2, 1)
 _NUM_FILAMENTS = 23  # prime, coprime with n_local
 _BASE_NUM_POINTS = 100
-
-
-@pytest.fixture(scope="module")
-def oft_env():
-    return OFT_env(nthreads=2)
 
 
 @pytest.fixture(scope="module")
@@ -169,7 +166,7 @@ def test_thincurr_phase_matches_biot_savart(oft_env, direct_response_inputs):
         gen_OFT_filament_and_eta_file(
             working_directory=tmpdir,
             filament_list=filament_list,
-            resistivity_list=[1e-6] * len(filament_list),
+            resistivity_list=[1e-6],
         )
         sensor_file_path = gen_OFT_sensors_file(
             sensor_details=sensor_details,
