@@ -229,3 +229,6 @@ examples/mesh_plot/
 thincurr_scratch/
 scratch/
 synthwave/vessel_caches
+
+# No figure storage to git, at least of pdfs
+*.pdf
