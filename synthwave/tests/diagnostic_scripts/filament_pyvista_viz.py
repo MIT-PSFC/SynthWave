@@ -2,18 +2,16 @@
 from diagnostic_header import (
     EquilibriumField,
     EquilibriumFilamentTracer,
+    build_geqdsk,
+    build_sensor_details_compat,
+    config,
     convert_cocos,
+    normalize_eq_field_dataset,
     np,
     os,
     pyvista,
     xr,
 )
-from tars.config import config
-from tars.out_of_scope.chisq_fast.sensor_helpers import (
-    build_sensor_details_compat,
-    normalize_eq_field_dataset,
-)
-from tars.reconstruct.utils import build_geqdsk
 
 
 def build_equilibrium_field(ds_eq_time: xr.Dataset) -> EquilibriumField:
@@ -33,7 +31,7 @@ def get_filaments_and_currents(mode, eq_field, config):
         default_trace_type=EquilibriumFilamentTracer.TraceType.FIELD,
     )
     filament_list, current_list = tracer.get_filament_list(
-        num_filaments=60,  # config.direct_response_filaments,
+        num_filaments=2,  # config.direct_response_filaments,
         coordinate_system="cartesian",
     )
     return filament_list, np.array(current_list, dtype=complex)

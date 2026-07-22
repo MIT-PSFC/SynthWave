@@ -2,19 +2,18 @@
 from diagnostic_header import (
     EquilibriumField,
     EquilibriumFilamentTracer,
+    build_geqdsk,
+    build_sensor_details_compat,
+    config,
     convert_cocos,
+    direct_response_biot_savart,
     mtri,
+    normalize_eq_field_dataset,
     np,
     os,
     plt,
     xr,
 )
-from tars.config import config
-from tars.out_of_scope.chisq_fast.sensor_helpers import (
-    build_sensor_details_compat,
-    normalize_eq_field_dataset,
-)
-from tars.reconstruct.utils import build_geqdsk, direct_response_biot_savart
 
 RAD2DEG = 180 / np.pi
 

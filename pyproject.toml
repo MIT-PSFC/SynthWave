@@ -8,7 +8,6 @@ authors = [
     {name = "Zander Keith", email = "zkeith@mit.edu"},
 ]
 dependencies = [
-    "pre-commit>=4.3.0",
     "freeqdsk>=0.5.2",
     "xarray>=2025.1.0",
     "scipy>=1.16.2",
@@ -29,6 +28,7 @@ dev = [
     "isort>=7.0.0",
     "mypy>=1.18.2",
     "nbmake>=1.5.0",
+    "pre-commit>=4.3.0",
     "pylint>=4.0.1",
     "pytest>=8.4.2",
     "ruff>=0.14.1",

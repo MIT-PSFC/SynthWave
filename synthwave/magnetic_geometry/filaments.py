@@ -18,6 +18,49 @@ from synthwave.magnetic_geometry.equilibrium_field import (
 from synthwave.magnetic_geometry.utils import cylindrical_to_cartesian
 
 
+def _average_phi0_poloidal_arc_spacing(
+    all_filament_points: np.ndarray,
+    atol: float = 0.15,
+) -> tuple[float, list[float]]:
+    """Estimate average poloidal arc spacing from filament crossings near phi=0."""
+    # Work in the toroidal-angle column of the already-offset filaments.
+    # Wrapping with angle(exp(i*phi)) maps every 2*pi crossing back to 0.
+    tor = all_filament_points[:, :, 1]
+    wrapped_phi = np.angle(np.exp(1j * tor))
+    phi0_crossings = np.argwhere(np.abs(wrapped_phi) <= atol)
+
+    # First identify one representative point index for each phi=0 crossing.
+    # Adjacent point indices are one sampled crossing region, so keep only the
+    # sample closest to phi=0. This avoids counting several neighboring samples
+    # from the same crossing.
+    crossing_point_idxs = []
+    for filament_idx in np.unique(phi0_crossings[:, 0]):
+        point_idxs = phi0_crossings[phi0_crossings[:, 0] == filament_idx, 1]
+        for group in np.split(point_idxs, np.where(np.diff(point_idxs) > 1)[0] + 1):
+            point_idx = group[np.argmin(np.abs(wrapped_phi[filament_idx, group]))]
+
+            # The first filament often has both eta=0 and eta=2*pi at phi=0;
+            # skip the duplicate endpoint so it does not create a zero spacing.
+            if filament_idx == 0 and point_idx == tor.shape[1] - 1:
+                continue
+            crossing_point_idxs.append(point_idx)
+
+    # The R-Z curve is shared by all toroidally shifted filaments, so we only
+    # need its poloidal arc-length lookup after all phi=0 indices are known.
+    rz = all_filament_points[0][:, [0, 2]]
+    segment_lengths = np.sqrt(np.sum(np.diff(rz, axis=0) ** 2, axis=1))
+    arc = np.concatenate(([0.0], np.cumsum(segment_lengths)))
+    total_arc = arc[-1]
+    if not np.allclose(rz[0], rz[-1]):
+        total_arc += float(np.linalg.norm(rz[0] - rz[-1]))
+
+    # Sort crossings around the closed poloidal curve and measure the wrapped
+    # arc-length gaps between consecutive filaments/crossings.
+    crossing_arcs = np.sort(arc[crossing_point_idxs] % total_arc)
+    arc_distances = np.diff(np.r_[crossing_arcs, crossing_arcs[0] + total_arc])
+    return float(np.mean(arc_distances)), arc_distances.tolist()
+
+
 def _solve_root_with_adaptive_bracket(
     f,
     x0: float,
@@ -179,10 +222,19 @@ class FilamentTracer(ABC):
             :, np.newaxis
         ]  # Apply toroidal offsets
 
+        average_poloidal_arc_spacing, poloidal_arc_spacing_distances = (
+            _average_phi0_poloidal_arc_spacing(all_filament_points)
+        )
+
         # Complex currents for rotating wave: I(phi) = I_0 * exp(i*sign(m)*n*phi)
-        # The sign of m determines the direction of the rotating wave
+        # The sign of m determines the direction of the rotating wave.
+        # Multiply by the mean filament-filament arc spacing so the output is a
+        # current in A, with units A/m.
         m_sign = int(np.sign(ratio.numerator)) if ratio.numerator != 0 else 1
-        filament_currents = np.exp(1j * starting_angles * m_sign * n_local)
+        filament_currents = (
+            np.exp(1j * starting_angles * m_sign * n_local)
+            * average_poloidal_arc_spacing
+        )
 
         if coordinate_system == "cylindrical":
             ds = xr.Dataset(
@@ -227,6 +279,12 @@ class FilamentTracer(ABC):
                     "point": np.arange(len(filament_etas)),
                 },
             )
+
+        ds.attrs["average_poloidal_arc_spacing"] = average_poloidal_arc_spacing
+        ds.attrs["poloidal_arc_spacing_distances"] = poloidal_arc_spacing_distances
+        ds.attrs["poloidal_arc_spacing_metric"] = "arc_length_between_phi0_crossings"
+        ds.attrs["current_units"] = "A"
+        ds.attrs["current_normalization"] = "current = current_density [1 A/m] * average_poloidal_arc_spacing [m]"
 
         return ds
 
