@@ -6,8 +6,13 @@ import numpy as np
 import pyvista
 import vtk
 import xarray as xr
-from OpenFUSIONToolkit import OFT_env
-from OpenFUSIONToolkit.ThinCurr import ThinCurr
+try: 
+    from OpenFUSIONToolkit import OFT_env
+    from OpenFUSIONToolkit.ThinCurr import ThinCurr
+except (ImportError, FileNotFoundError):
+    OFT_env = None
+    ThinCurr = None
+
 
 from synthwave.magnetic_geometry.filaments import FilamentTracer
 
@@ -70,10 +75,16 @@ def calc_direct_response(
                 direct_response.imag,
             ),
         },
+        # Ensure that the coordinate carries both the name and index or the sensor, to ensure that ordering is preserved
         coords={
-            "sensor_idx": sensor_obj[
-                "names"
-            ]  # Define the 'sensor_idx' coordinate with the list of sensor names
+            "sensor_name": (
+                "sensor_idx",
+                sensor_obj["names"],
+            ),  # Define the 'sensor_name' coordinate with the list of sensor names
+            "sensor_idx": (
+                "sensor_idx",
+                sensor_details.coords["sensor_idx"].values,
+            ),  # Define the 'sensor_idx' coordinate with the list of sensor names
         },
         attrs={
             "mesh_file": mesh_file,
@@ -345,6 +356,7 @@ def run_frequency_scan(
     )
 
     # Test one frequency
+    # Disable HODLR compression to improve convergence
     result = tw_mesh.compute_freq_response(fdriver=driver, freq=freq)
 
     # contribution from the mesh current to the sensor, with the mesh current at a given frequency

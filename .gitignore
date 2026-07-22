@@ -229,3 +229,7 @@ examples/mesh_plot/
 thincurr_scratch/
 scratch/
 synthwave/vessel_caches
+
+# Images
+*.pdf
+

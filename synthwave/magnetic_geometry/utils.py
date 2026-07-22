@@ -1,5 +1,8 @@
 import numpy as np
-from OpenFUSIONToolkit.ThinCurr.meshing import ThinCurr_periodic_toroid
+try:
+    from OpenFUSIONToolkit.ThinCurr.meshing import ThinCurr_periodic_toroid
+except (ImportError, FileNotFoundError):
+    ThinCurr_periodic_toroid = None
 from sympy import nextprime
 
 

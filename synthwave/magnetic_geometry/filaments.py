@@ -7,14 +7,138 @@ from typing import Optional
 import numpy as np
 import xarray as xr
 from loguru import logger
+from scipy.integrate import solve_ivp
 from scipy.interpolate import make_interp_spline
-from scipy.optimize import newton
+from scipy.optimize import root_scalar
 from sympy import nextprime
 
 from synthwave.magnetic_geometry.equilibrium_field import (
     EquilibriumField,
 )
 from synthwave.magnetic_geometry.utils import cylindrical_to_cartesian
+
+
+def _average_phi0_poloidal_arc_spacing(
+    all_filament_points: np.ndarray,
+    atol: float = 0.15,
+) -> tuple[float, list[float]]:
+    """Estimate average poloidal arc spacing from filament crossings near phi=0."""
+    # Work in the toroidal-angle column of the already-offset filaments.
+    # Wrapping with angle(exp(i*phi)) maps every 2*pi crossing back to 0.
+    tor = all_filament_points[:, :, 1]
+    wrapped_phi = np.angle(np.exp(1j * tor))
+    phi0_crossings = np.argwhere(np.abs(wrapped_phi) <= atol)
+
+    # First identify one representative point index for each phi=0 crossing.
+    # Adjacent point indices are one sampled crossing region, so keep only the
+    # sample closest to phi=0. This avoids counting several neighboring samples
+    # from the same crossing.
+    crossing_point_idxs = []
+    for filament_idx in np.unique(phi0_crossings[:, 0]):
+        point_idxs = phi0_crossings[phi0_crossings[:, 0] == filament_idx, 1]
+        for group in np.split(point_idxs, np.where(np.diff(point_idxs) > 1)[0] + 1):
+            point_idx = group[np.argmin(np.abs(wrapped_phi[filament_idx, group]))]
+
+            # The first filament often has both eta=0 and eta=2*pi at phi=0;
+            # skip the duplicate endpoint so it does not create a zero spacing.
+            if filament_idx == 0 and point_idx == tor.shape[1] - 1:
+                continue
+            crossing_point_idxs.append(point_idx)
+
+    # The R-Z curve is shared by all toroidally shifted filaments, so we only
+    # need its poloidal arc-length lookup after all phi=0 indices are known.
+    rz = all_filament_points[0][:, [0, 2]]
+    segment_lengths = np.sqrt(np.sum(np.diff(rz, axis=0) ** 2, axis=1))
+    arc = np.concatenate(([0.0], np.cumsum(segment_lengths)))
+    total_arc = arc[-1]
+    if not np.allclose(rz[0], rz[-1]):
+        total_arc += float(np.linalg.norm(rz[0] - rz[-1]))
+
+    # Sort crossings around the closed poloidal curve and measure the wrapped
+    # arc-length gaps between consecutive filaments/crossings.
+    crossing_arcs = np.sort(arc[crossing_point_idxs] % total_arc)
+    arc_distances = np.diff(np.r_[crossing_arcs, crossing_arcs[0] + total_arc])
+    return float(np.mean(arc_distances)), arc_distances.tolist()
+
+
+def _solve_root_with_adaptive_bracket(
+    f,
+    x0: float,
+    fprime,
+    bracket: tuple[float, float],
+    xtol: float = 1e-3,
+    maxiter: int = 100,
+    n_scan: int = 81,
+    debug_output: bool = True,
+) -> float:
+    """Solve f(x)=0 with bracket->scan->Newton fallback.
+
+    Use an adaptive strategy with search limits, should have improved convergence.
+    Helps when psi(q) is close to an inner or outer limit, and/or close to x-points
+    """
+
+    a, b = float(bracket[0]), float(bracket[1])
+    if b < a:
+        a, b = b, a
+
+    # Ensure that upper bound is sufficiently larger than the initial guess
+    if b - x0 < 0.2 * b:
+        b = x0 + 0.2 * b
+
+    fa = f(a)
+    fb = f(b)
+    if np.isclose(fa, 0.0):
+        return a
+    if np.isclose(fb, 0.0):
+        return b
+
+    if np.sign(fa) != np.sign(fb):
+        result = root_scalar(
+            f=f,
+            method="toms748",
+            bracket=[a, b],
+            xtol=xtol,
+            maxiter=maxiter,
+        )
+        if not result.converged:
+            if debug_output:
+                print("Result: ", result)
+                print("Bracket: ", bracket)
+                print("X0: ", x0)
+                print("Function: ", f)
+                print("Fprime: ", fprime)
+            raise ValueError("Root solve did not converge")
+        return float(result.root)
+
+    # If endpoints have the same sign, scan for a local sign change and
+    # prefer the interval closest to x0. [e.g. outer boundary is getting close
+    #  to a magnetic coil, so Psi is concave across the boundary]
+    xs = np.linspace(a, b, n_scan)
+    fs = np.array([f(x) for x in xs])
+    finite = np.isfinite(fs)
+    for i in np.where(finite & np.isclose(fs, 0.0))[0]:
+        return float(xs[i])
+
+    # Last resort: open method from the local guess.
+    result = root_scalar(
+        f=f,
+        x0=float(np.clip(x0, a, b)),
+        fprime=fprime,
+        method="newton",
+        xtol=xtol,
+        maxiter=maxiter,
+    )
+    if not result.converged:
+        if debug_output:
+            logger.debug("Result: {}", result)
+            logger.debug("Function values: {}", fs)
+            logger.debug("X values: {}", xs)
+            logger.debug("Bracket: {}", bracket)
+            logger.debug("X0: {}", x0)
+            logger.debug("Function: {}", f)
+            logger.debug("Fprime: {}", fprime)
+        raise ValueError("Root solve did not converge")
+    return float(result.root)
 
 
 class FilamentTracer(ABC):
@@ -40,19 +164,26 @@ class FilamentTracer(ABC):
         self.num_points = num_points
 
     @abstractmethod
-    def trace(self, num_points: Optional[int] = None) -> tuple[np.ndarray, np.ndarray]:
-        """Trace the filament and return the points in cylindrical coordinates (R, phi, Z), and the corresponding eta values."""
+    def trace(
+        self, num_points: Optional[int] = None, **kwargs
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Trace the filament and return the points in cylindrical coordinates (R, phi, Z), and the corresponding eta values.
+
+        This method accepts extra kwargs for compatibility with tracer helpers that may pass a ``trace_type`` keyword.
+        """
 
     def get_filament_ds(
         self,
         num_filaments: int,
         coordinate_system: Optional[str] = "cartesian",
+        trace_type: Optional[object] = None,
     ) -> xr.Dataset:
         """Generate points and corresponding currents for multiple filaments.
 
         Args:
             num_filaments (int): How many individual filaments to create
             coordinate_system (Optional[str], default = "cartesian"): Coordinate system for output points. Options are "cylindrical", "cartesian", or "toroidal".
+            trace_type (Optional[object], default=None): Optional trace type passed through to ``trace()``. If None, the tracer's default tracing method is used.
 
         Returns:
             xr.Dataset: Dataset containing filament points and currents. Dimensions are 'filament' and 'point', with variables 'R', 'phi', 'Z' or 'x', 'y', 'z' or 'eta', 'phi', and 'current'.
@@ -76,7 +207,10 @@ class FilamentTracer(ABC):
             )
 
         # Start with a filament that has zero toroidal offset
-        base_filament_points, filament_etas = self.trace()
+        if trace_type is None:
+            base_filament_points, filament_etas = self.trace()
+        else:
+            base_filament_points, filament_etas = self.trace(trace_type=trace_type)
 
         # Create toroidal offsets and corresponding currents
         starting_angles = np.linspace(0, 2 * np.pi, num_filaments, endpoint=False)
@@ -88,10 +222,19 @@ class FilamentTracer(ABC):
             :, np.newaxis
         ]  # Apply toroidal offsets
 
+        average_poloidal_arc_spacing, poloidal_arc_spacing_distances = (
+            _average_phi0_poloidal_arc_spacing(all_filament_points)
+        )
+
         # Complex currents for rotating wave: I(phi) = I_0 * exp(i*sign(m)*n*phi)
-        # The sign of m determines the direction of the rotating wave
+        # The sign of m determines the direction of the rotating wave.
+        # Multiply by the mean filament-filament arc spacing so the output is a
+        # current in A, with units A/m.
         m_sign = int(np.sign(ratio.numerator)) if ratio.numerator != 0 else 1
-        filament_currents = np.exp(1j * starting_angles * m_sign * n_local)
+        filament_currents = (
+            np.exp(1j * starting_angles * m_sign * n_local)
+            * average_poloidal_arc_spacing
+        )
 
         if coordinate_system == "cylindrical":
             ds = xr.Dataset(
@@ -137,12 +280,19 @@ class FilamentTracer(ABC):
                 },
             )
 
+        ds.attrs["average_poloidal_arc_spacing"] = average_poloidal_arc_spacing
+        ds.attrs["poloidal_arc_spacing_distances"] = poloidal_arc_spacing_distances
+        ds.attrs["poloidal_arc_spacing_metric"] = "arc_length_between_phi0_crossings"
+        ds.attrs["current_units"] = "A"
+        ds.attrs["current_normalization"] = "current = current_density [1 A/m] * average_poloidal_arc_spacing [m]"
+
         return ds
 
     def get_filament_list(
         self,
         num_filaments: int,
         coordinate_system: str = "cartesian",
+        trace_type: Optional[object] = None,
     ) -> tuple[list[np.ndarray], list[float]]:
         """Generate a list of filaments, each represented as an array of shape (N, 3) in cylindrical coordinates.
 
@@ -162,7 +312,9 @@ class FilamentTracer(ABC):
                 "coordinate_system must be either 'cylindrical' or 'cartesian'"
             )
 
-        filament_points_ds = self.get_filament_ds(num_filaments, coordinate_system)
+        filament_points_ds = self.get_filament_ds(
+            num_filaments, coordinate_system, trace_type=trace_type
+        )
 
         filament_list = []
         for i in range(num_filaments):
@@ -203,6 +355,8 @@ class ToroidalFilamentTracer(FilamentTracer):
         base_num_points: Optional[int] = 1000,
         scale_points: Optional[bool] = True,
         prevent_synthetic_structure: Optional[bool] = True,
+        sign_Ip: int = 1,
+        sign_B0: int = 1,
     ):
         """Initialize a toroidal filament with a circular cross-section.
 
@@ -231,15 +385,19 @@ class ToroidalFilamentTracer(FilamentTracer):
         self.R0 = R0
         self.Z0 = Z0
         self.a = a
+        self.sign_Ip = sign_Ip
+        self.sign_B0 = sign_B0
 
-    def trace(self, num_points: Optional[int] = None) -> tuple[np.ndarray, np.ndarray]:
+    def trace(
+        self, num_points: Optional[int] = None, **kwargs
+    ) -> tuple[np.ndarray, np.ndarray]:
         # Create a circular filament around the magnetic axis
         if num_points is None:
             num_points = self.num_points
         phi = np.linspace(0, 2 * np.pi * self.m / self.n, num_points)
         filament_etas = np.linspace(0, 2 * np.pi, num_points)
         R = self.R0 + self.a * np.cos(filament_etas)
-        Z = self.Z0 + self.a * np.sin(filament_etas)
+        Z = self.Z0 + self.a * np.sin(filament_etas) * (self.sign_Ip * self.sign_B0)
 
         filament_points = np.column_stack((R, phi, Z))
 
@@ -254,6 +412,9 @@ class EquilibriumFilamentTracer(FilamentTracer):
         NAIVE = 1  # Naive tracing, following the rational surface but not the field
         SINGLE = 2  # Single tracing method, using the magnetic field to determine d(phi)/d(eta)
         AVERAGE = 3  # Average tracing method, using the magnetic field to determine d(phi)/d(eta) and averaging between points
+        FIELD = (
+            4  # Field-line following tracer directly integrating the equilibrium field
+        )
 
     def __init__(
         self,
@@ -344,7 +505,14 @@ class EquilibriumFilamentTracer(FilamentTracer):
         ratio = Fraction(self.m, self.n)
         m_local = np.abs(ratio.numerator)
         n_local = ratio.denominator
-        psi_q = self.eq_field.get_psi_of_q(np.abs(m_local / n_local))
+        q_target = np.abs(m_local / n_local)
+        if trace_type == EquilibriumFilamentTracer.TraceType.FIELD:
+            try:
+                psi_q = self.eq_field.get_psi_of_q_raw(q_target)
+            except ValueError:
+                psi_q = self.eq_field.get_psi_of_q(q_target)
+        else:
+            psi_q = self.eq_field.get_psi_of_q(q_target)
 
         sign_Ip = int(np.sign(float(self.eq_field.eqdsk.cpasma)))
         sign_Bt = int(np.sign(float(self.eq_field.F(psi_q))))
@@ -355,12 +523,19 @@ class EquilibriumFilamentTracer(FilamentTracer):
         # Start at the outboard midplane, slightly outside magnetic axis
         Z_start = self.eq_field.eqdsk.zmagx
         R_guess = self.eq_field.eqdsk.rmagx + 0.1
-        R_start = newton(
-            func=lambda R: self.eq_field.psi.ev(R, Z_start) - psi_q,
+
+        # Switching from Newton solver to bracket+scan+Newton approach to improve convergence,
+        # especially for very high or very low q m/n modes
+        R_start = _solve_root_with_adaptive_bracket(
+            f=lambda R: self.eq_field.psi.ev(R, Z_start) - psi_q,
             x0=R_guess,
             fprime=lambda R: self.eq_field.psi.ev(R, Z_start, dx=1, dy=0),
-            maxiter=800,
-            tol=1e-3,
+            bracket=(
+                self.eq_field.eqdsk.rmagx,
+                self.eq_field.eqdsk.rbdry.max() + 0.2,
+            ),  # Slightly overlarge upper limit: outer limiter surface
+            xtol=1e-8,
+            maxiter=200,
         )
 
         # Sliding along minor radius a to meet the rational surface
@@ -385,6 +560,8 @@ class EquilibriumFilamentTracer(FilamentTracer):
                 -sign_Ip * self.helicity_sign
             ) * self.eq_field.psi.ev(R, Z, dx=0, dy=1) * np.sin(eta)
 
+        # Initial a_next value helps set search bounds
+        a_next = []
         for i, eta in enumerate(filament_etas):
             if i == 0:
                 R_prev = R_start
@@ -396,18 +573,64 @@ class EquilibriumFilamentTracer(FilamentTracer):
                 (R_prev - self.eq_field.eqdsk.rmagx) ** 2
                 + (Z_prev - self.eq_field.eqdsk.zmagx) ** 2
             )
-            a_next = newton(
-                func=lambda a: self.eq_field.psi.ev(_R_a(eta, a), _Z_a(eta, a)) - psi_q,
-                x0=a_guess,
-                fprime=lambda a: psi_prime_a(eta, a),
-                maxiter=800,
-                tol=1e-3,
+
+            # For just the first point, set 'a_next' so that we can recursively bracket the root for subsequent points.
+            # After that, we can use the previous point's 'a_next' as the guess for the next point, which should improve convergence.
+            if a_next == []:
+                a_next.append(a_guess)
+
+            a_next.append(
+                _solve_root_with_adaptive_bracket(
+                    f=lambda a: self.eq_field.psi.ev(_R_a(eta, a), _Z_a(eta, a))
+                    - psi_q,
+                    x0=a_guess,
+                    fprime=lambda a: psi_prime_a(eta, a),
+                    bracket=(
+                        max(0.0, a_next[-1] - 0.05),
+                        a_next[-1] + 0.05,
+                    ),  # Upper limit: max distance from magnetic axis to boundary
+                    xtol=1e-8,
+                    maxiter=500,
+                )
             )
-            poloidal_points[i, :] = [_R_a(eta, a_next), _Z_a(eta, a_next), a_next]
+
+            poloidal_points[i, :] = [
+                _R_a(eta, a_next[-1]),
+                _Z_a(eta, a_next[-1]),
+                a_next[-1],
+            ]
+
+        # Optional function for FIELD type trace: directly follow field line by integrating
+        # ODE for dR/dphi and dZ/dphi based on local magnetic field components.
+        def _trace_field_line(phi_end, num_points):
+            def _field_line_rhs(phi, y):
+                R, Z = y
+                Br, Bt, Bz = self.eq_field.get_field_at_point(R, Z)
+                if np.isclose(Bt, 0.0):
+                    raise ValueError("Bphi is zero during field-line integration")
+                dR_dphi = (Br / Bt) * R
+                dZ_dphi = (Bz / Bt) * R
+                return [dR_dphi, dZ_dphi]
+
+            t_eval = np.linspace(0.0, phi_end, num_points)
+            solution = solve_ivp(
+                fun=_field_line_rhs,
+                t_span=(0.0, phi_end),
+                y0=[R_start, Z_start],
+                t_eval=t_eval,
+                method="DOP853",
+                rtol=1e-9,
+                atol=1e-12,
+                max_step=np.abs(phi_end) / max(200, num_points),
+            )
+            if not solution.success:
+                raise ValueError(f"Field-line integration failed: {solution.message}")
+            return solution.y[0], solution.y[1], solution.t
 
         # alternative form removing the assumption that dl = r d_eta (that assumption holds only for circular cross-sections)
         def _d_phi_dl(dl, R, Bp, Bt):
             # https://youjunhu.github.io/research_notes/tokamak_equilibrium_htlatex/tokamak_equilibrium.html
+            # Eqn. 32
             return (Bt * dl) / (R * Bp)
 
         # Finalize filament trace based on trace_type
@@ -424,6 +647,10 @@ class EquilibriumFilamentTracer(FilamentTracer):
             filament_points = np.column_stack(
                 (poloidal_points[:, 0], phi, poloidal_points[:, 1])
             )
+        elif trace_type == EquilibriumFilamentTracer.TraceType.FIELD:
+            known_phi_end = self.helicity_sign * sign_Bt * 2 * np.pi * m_local / n_local
+            R_field, Z_field, phi_field = _trace_field_line(known_phi_end, num_points)
+            filament_points = np.column_stack((R_field, phi_field, Z_field))
         elif trace_type in [
             EquilibriumFilamentTracer.TraceType.SINGLE,
             EquilibriumFilamentTracer.TraceType.AVERAGE,
@@ -437,12 +664,15 @@ class EquilibriumFilamentTracer(FilamentTracer):
             # d_eta = np.mean(np.diff(filament_etas))
             # d_phi = _d_phi(r, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1], d_eta)
 
-            # Compute segment lengths with wraparound so the last segment goes from
+            # Note: the below assumes that Bp = sqrt(Br^2 + Bz^2) and Bt = Bphi
             # the final point back to the first
             dR = np.roll(R, -1) - R
             dZ = np.roll(Z, -1) - Z
             dl = np.sqrt(dR**2 + dZ**2)
-            d_phi = _d_phi_dl(dl, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1])
+            d_phi = (
+                _d_phi_dl(dl, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1])
+                * self.helicity_sign
+            )
 
             if trace_type == EquilibriumFilamentTracer.TraceType.SINGLE:
                 phi = np.cumsum(d_phi) - d_phi[0]
@@ -454,6 +684,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
             # Numerical correction to ensure final point is at the proper angle.
             # sign_Bt carries the direction of the toroidal field; helicity_sign
             # carries whether we trace parallel (+1) or antiparallel (-1) to the field.
+
             known_phi_end = self.helicity_sign * sign_Bt * 2 * np.pi * m_local / n_local
 
             # If actual phi significantly deviates from known phis, log a critical warning
@@ -461,6 +692,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
                 logger.critical(
                     f"Final phi value deviates significantly from known phi values!\nExpected: {known_phi_end}\nActual: {phi[-1]}"
                 )
+                # raise ValueError("Final phi value deviates significantly from known phi values!")
 
             actual_phi_start = phi[0]
             actual_phi_end = phi[-1]

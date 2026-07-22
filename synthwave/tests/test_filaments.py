@@ -15,6 +15,7 @@ from synthwave.magnetic_geometry.filaments import (
     FilamentTracer,
     ToroidalFilamentTracer,
 )
+from synthwave.magnetic_geometry.utils import cylindrical_to_cartesian
 
 FIG_DIR = os.path.join(PACKAGE_ROOT, "tests", "figures")
 _CMOD_EQDSK_FILE = os.path.join(PACKAGE_ROOT, "input_data", "cmod", "g1051202011.1000")
@@ -22,6 +23,8 @@ _CMOD_EQDSK_FILE = os.path.join(PACKAGE_ROOT, "input_data", "cmod", "g1051202011
 
 @pytest.fixture(scope="module")
 def cmod_eqdsk():
+    if not os.path.exists(_CMOD_EQDSK_FILE):
+        pytest.skip(f"Missing required EQDSK file: {_CMOD_EQDSK_FILE}")
     with open(_CMOD_EQDSK_FILE, "r") as f:
         return freeqdsk.geqdsk.read(f)
 
@@ -619,10 +622,63 @@ class TestEquilibriumFilamentTracer:
         assert points.shape == (expected_points, 3)
         assert etas.shape == (expected_points,)
 
+    def test_get_filament_ds_trace_type_passed(self, cmod_eqdsk):
+        """Test that get_filament_ds passes trace_type through to trace()."""
+        eq_field = EquilibriumField(cmod_eqdsk)
+        tracer = EquilibriumFilamentTracer(
+            4,
+            1,
+            eq_field,
+            base_num_points=101,
+            default_trace_type=EquilibriumFilamentTracer.TraceType.SINGLE,
+        )
+        points_field, _ = tracer.trace(
+            num_points=tracer.num_points,
+            trace_type=EquilibriumFilamentTracer.TraceType.FIELD,
+        )
+        ds_field = tracer.get_filament_ds(
+            num_filaments=1,
+            coordinate_system="cartesian",
+            trace_type=EquilibriumFilamentTracer.TraceType.FIELD,
+        )
+        x, y, z = (ds_field[coord].isel(filament=0).values for coord in ["x", "y", "z"])
+        xyz = np.stack((x, y, z), axis=-1)
+        cyl_x, cyl_y, cyl_z = points_field[:, 0], points_field[:, 1], points_field[:, 2]
+        expected_xyz = np.stack(cylindrical_to_cartesian(cyl_x, cyl_y, cyl_z), axis=-1)
+        np.testing.assert_allclose(xyz, expected_xyz, atol=1e-8)
+
+    def test_get_filament_list_trace_type_passed(self, cmod_eqdsk):
+        """Test that get_filament_list passes trace_type through to trace()."""
+        eq_field = EquilibriumField(cmod_eqdsk)
+        tracer = EquilibriumFilamentTracer(
+            4,
+            1,
+            eq_field,
+            base_num_points=101,
+            default_trace_type=EquilibriumFilamentTracer.TraceType.SINGLE,
+        )
+        points_field, _ = tracer.trace(
+            num_points=tracer.num_points,
+            trace_type=EquilibriumFilamentTracer.TraceType.FIELD,
+        )
+        filament_list, _ = tracer.get_filament_list(
+            num_filaments=1,
+            coordinate_system="cartesian",
+            trace_type=EquilibriumFilamentTracer.TraceType.FIELD,
+        )
+        expected_xyz = np.stack(
+            cylindrical_to_cartesian(
+                points_field[:, 0], points_field[:, 1], points_field[:, 2]
+            ),
+            axis=-1,
+        )
+        np.testing.assert_allclose(filament_list[0], expected_xyz, atol=1e-8)
+
     @pytest.mark.parametrize(
         "mode",
         [
             {"m": 1, "n": 1},
+            {"m": -1, "n": 1},
             {"m": 2, "n": 1},
             {"m": 3, "n": 2},
             {"m": 3, "n": 1},
@@ -841,13 +897,20 @@ class TestEquilibriumFilamentTracer:
         )
 
     @pytest.mark.parametrize(
-        "mode", [{"m": 2, "n": 1}, {"m": 3, "n": 2}, {"m": 3, "n": 1}, {"m": 4, "n": 3}]
+        "mode",
+        [
+            {"m": 2, "n": 1},
+            {"m": -2, "n": 1},
+            {"m": 3, "n": 2},
+            {"m": 3, "n": 1},
+            {"m": 4, "n": 3},
+        ],
     )
     def test_points_and_currents_3d(self, cmod_eqdsk, mode):
         """Test get_filament_ds method and create 3D visualization of filament traces."""
 
         eq_field = EquilibriumField(cmod_eqdsk)
-        num_filaments = 7  # Prime: coprime with any n_local
+        num_filaments = 23  # Prime: coprime with any n_local
 
         fig_dir = os.path.join(self.fig_dir, "test_points_and_currents_3d")
         if not os.path.exists(fig_dir):

@@ -372,9 +372,7 @@ def test_calc_direct_response_matches_frequency_response(oft_env_fixture):
         filament_list, current_list = toroidal_tracer.get_filament_list(
             num_filaments=num_filaments
         )
-        gen_OFT_filament_and_eta_file(
-            working_directory, filament_list, [1e-6] * len(filament_list)
-        )
+        gen_OFT_filament_and_eta_file(working_directory, filament_list, [1e-6])
 
         total_response, direct_response_freq, vessel_response = calc_frequency_response(
             oft_env=oft_env_fixture,
