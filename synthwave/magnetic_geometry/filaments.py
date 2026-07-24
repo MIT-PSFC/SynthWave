@@ -82,8 +82,13 @@ class FilamentTracer(ABC):
 
         # Complex currents for rotating wave: I(phi) = I_0 * exp(i*sign(m)*n*phi)
         # The sign of m determines the direction of the rotating wave
+        # The winding uses the UNREDUCED |n|:
+        # geometry reduces (m, n) to lowest terms (same rational surface and field lines),
+        # but a non-coprime mode (k*m, k*n) is the k-th harmonic of the (m, n) mode.
+        # Same filaments, current pattern winding k times faster.
+        # For coprime modes abs(n) == n_local and nothing changes.
         m_sign = int(np.sign(ratio.numerator)) if ratio.numerator != 0 else 1
-        filament_currents = np.exp(1j * starting_angles * m_sign * n_local)
+        filament_currents = np.exp(1j * starting_angles * m_sign * abs(self.n))
 
         if coordinate_system == "cylindrical":
             ds = xr.Dataset(
