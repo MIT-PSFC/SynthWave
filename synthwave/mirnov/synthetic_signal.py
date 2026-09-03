@@ -13,6 +13,77 @@ from scipy.constants import mu_0
 from synthwave.magnetic_geometry.filaments import FilamentTracer
 
 
+def filament_flux_matrix(
+    sensor_details: xr.Dataset,
+    filament_list: list,
+    max_block_elements: int = 2**20,
+) -> np.ndarray:
+    """Vectorized Biot-Savart: unit-current flux of every filament through every sensor.
+
+    Every polyline segment of every filament is one current element evaluated at its
+    midpoint. The segments of all filaments are stacked and processed in blocks so the
+    (n_sensors, n_segments) work arrays stay below max_block_elements each.
+
+    The direct response of any current pattern on these filaments is current_list @ flux,
+    so modes sharing a filament set (harmonics on one rational surface) share this matrix.
+
+    Args:
+        sensor_details: Dataset with position (n_sensors, 3), normal (n_sensors, 3), radius (n_sensors,).
+        filament_list: List of (N_pts, 3) cartesian filament point arrays. NaN points are dropped,
+            a filament with fewer than 2 valid points contributes zero flux.
+        max_block_elements: Upper bound on n_sensors * n_segments per block.
+
+    Returns:
+        Real array of shape (n_filaments, n_sensors), flux [Wb] per unit filament current [A].
+    """
+    sensor_positions = np.asarray(sensor_details["position"].data, dtype=float)
+    sensor_normals = np.asarray(sensor_details["normal"].data, dtype=float)
+    sensor_areas = np.pi * np.asarray(sensor_details["radius"].data, dtype=float) ** 2
+    num_sensors = len(sensor_positions)
+
+    dl_parts, midpoint_parts, owner_parts = [], [], []
+    for i, filament_pts in enumerate(filament_list):
+        filament_pts = np.asarray(filament_pts, dtype=float)
+        filament_pts = filament_pts[~np.isnan(filament_pts).any(axis=1)]
+        if len(filament_pts) < 2:
+            continue
+        dl_parts.append(filament_pts[1:] - filament_pts[:-1])
+        midpoint_parts.append(0.5 * (filament_pts[1:] + filament_pts[:-1]))
+        owner_parts.append(np.full(len(filament_pts) - 1, i))
+
+    flux = np.zeros((len(filament_list), num_sensors))
+    if not dl_parts:
+        return flux
+    dl = np.concatenate(dl_parts)
+    midpoints = np.concatenate(midpoint_parts)
+    owner = np.concatenate(owner_parts)
+
+    block = max(1, max_block_elements // max(num_sensors, 1))
+    for start in range(0, len(dl), block):
+        stop = start + block
+        # Components as (n_sensors, n_seg) arrays, no (..., 3) temporaries or np.cross
+        r_x = sensor_positions[:, 0:1] - midpoints[None, start:stop, 0]
+        r_y = sensor_positions[:, 1:2] - midpoints[None, start:stop, 1]
+        r_z = sensor_positions[:, 2:3] - midpoints[None, start:stop, 2]
+        inv_r3 = (r_x * r_x + r_y * r_y + r_z * r_z) ** -1.5
+        dl_x = dl[None, start:stop, 0]
+        dl_y = dl[None, start:stop, 1]
+        dl_z = dl[None, start:stop, 2]
+        # (dl x r) . n as a scalar triple product
+        contribution = (
+            sensor_normals[:, 0:1] * (dl_y * r_z - dl_z * r_y)
+            + sensor_normals[:, 1:2] * (dl_z * r_x - dl_x * r_z)
+            + sensor_normals[:, 2:3] * (dl_x * r_y - dl_y * r_x)
+        ) * inv_r3
+        # Segments are stored filament by filament, so each filament in the block is one
+        # contiguous run: reduce every run and add it to its owner row
+        owner_block = owner[start:stop]
+        run_starts = np.concatenate([[0], np.flatnonzero(np.diff(owner_block)) + 1])
+        run_sums = np.add.reduceat(contribution, run_starts, axis=1)
+        flux[owner_block[run_starts]] += run_sums.T
+    return flux * (mu_0 / (4 * np.pi)) * sensor_areas[None, :]
+
+
 def direct_response_biot_savart(
     sensor_details: xr.Dataset,
     filament_list: list,
@@ -28,31 +99,8 @@ def direct_response_biot_savart(
     Returns:
         Complex array of shape (n_sensors,): total flux through each sensor.
     """
-    sensor_positions = sensor_details["position"].data  # (n_sensors, 3)
-    sensor_normals = sensor_details["normal"].data  # (n_sensors, 3)
-    sensor_areas = np.pi * sensor_details["radius"].data ** 2  # (n_sensors,)
-
-    direct_response = np.zeros(len(sensor_positions), dtype=complex)
-    for filament_pts, current in zip(filament_list, current_list):
-        filament_pts = np.asarray(filament_pts, dtype=float)
-        valid = ~np.isnan(filament_pts).any(axis=1)
-        filament_pts = filament_pts[valid]
-        if len(filament_pts) < 2:
-            continue
-        # One current element per polyline segment, evaluated at its midpoint
-        dl = filament_pts[1:] - filament_pts[:-1]  # (n_seg, 3)
-        midpoints = 0.5 * (filament_pts[1:] + filament_pts[:-1])  # (n_seg, 3)
-        # r_prime: (n_sensors, n_seg, 3)
-        r_prime = sensor_positions[:, None, :] - midpoints[None, :, :]
-        r_prime_norm = np.linalg.norm(r_prime, axis=2)  # (n_sensors, n_seg)
-        dl_cross_r = np.cross(dl[None, :, :], r_prime)  # (n_sensors, n_seg, 3)
-        B_total = np.sum(
-            (mu_0 / (4 * np.pi)) * dl_cross_r / r_prime_norm[:, :, None] ** 3,
-            axis=1,
-        )  # (n_sensors, 3)
-        flux = np.sum(B_total * sensor_normals, axis=1) * sensor_areas  # (n_sensors,)
-        direct_response += current * flux
-    return direct_response
+    flux = filament_flux_matrix(sensor_details, filament_list)
+    return np.asarray(current_list, dtype=complex) @ flux
 
 
 def direct_response_thincurr(
