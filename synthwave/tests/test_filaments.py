@@ -514,13 +514,10 @@ class TestToroidalFilamentTracer:
         # All current magnitudes must be 1 (unit phasors)
         np.testing.assert_allclose(np.abs(currents), 1.0, rtol=1e-10)
 
-        # Adjacent filaments must have equal phase steps of 2*pi*sign(m)*n_local/num_filaments
+        # Adjacent filaments must have equal phase steps of 2*pi*n/num_filaments
         # Wrap expected to (-pi, pi] to match np.angle output range
-        ratio = Fraction(mode["m"], mode["n"])
-        n_local = ratio.denominator
-        m_sign = int(np.sign(ratio.numerator)) if ratio.numerator != 0 else 1
         expected_phase_step = np.angle(
-            np.exp(1j * 2 * np.pi * m_sign * n_local / num_filaments)
+            np.exp(1j * 2 * np.pi * mode["n"] / num_filaments)
         )
         measured_phase_steps = np.angle(currents[1:] / currents[:-1])
         np.testing.assert_allclose(
@@ -888,13 +885,10 @@ class TestEquilibriumFilamentTracer:
         # All current magnitudes must be 1 (unit phasors)
         np.testing.assert_allclose(np.abs(currents), 1.0, rtol=1e-10)
 
-        # Adjacent filaments must have equal phase steps of 2*pi*sign(m)*n_local/num_filaments
+        # Adjacent filaments must have equal phase steps of 2*pi*n/num_filaments
         # Wrap expected to (-pi, pi] to match np.angle output range
-        ratio = Fraction(mode["m"], mode["n"])
-        n_local = ratio.denominator
-        m_sign = int(np.sign(ratio.numerator)) if ratio.numerator != 0 else 1
         expected_phase_step = np.angle(
-            np.exp(1j * 2 * np.pi * m_sign * n_local / num_filaments)
+            np.exp(1j * 2 * np.pi * mode["n"] / num_filaments)
         )
         measured_phase_steps = np.angle(currents[1:] / currents[:-1])
         np.testing.assert_allclose(
@@ -1003,7 +997,7 @@ class TestEquilibriumFilamentTracer:
 
         base_num_points = 100
         tracer = EquilibriumFilamentTracer(
-            (mode["m"] * helicity[1], mode["n"]),
+            (mode["m"], mode["n"] * helicity[1]),
             eq_field,
             base_num_points=base_num_points,
             scale_points=False,
@@ -1124,10 +1118,10 @@ class TestAllFilamentTracers:
         if tracer_class is EquilibriumFilamentTracer:
             eq_field = EquilibriumField(cmod_eqdsk)
             tracer_args_pos = ((mode["m"], mode["n"]), eq_field) + extra_args
-            tracer_args_neg = ((-mode["m"], mode["n"]), eq_field) + extra_args
+            tracer_args_neg = ((mode["m"], -mode["n"]), eq_field) + extra_args
         else:
             tracer_args_pos = ((mode["m"], mode["n"]),) + extra_args
-            tracer_args_neg = ((-mode["m"], mode["n"]),) + extra_args
+            tracer_args_neg = ((mode["m"], -mode["n"]),) + extra_args
         tracer_pos = tracer_class(*tracer_args_pos)
         filament_pos_ds = tracer_pos.get_filament_ds(
             num_filaments=7, coordinate_system="cylindrical"
@@ -1143,24 +1137,24 @@ class TestAllFilamentTracers:
         R_neg = filament_neg_ds["R"].values
         Z_neg = filament_neg_ds["Z"].values
 
-        # Check that the maximum and minimum R and Z values are approximately equal between positive and negative m
+        # Check that the maximum and minimum R and Z values are approximately equal between positive and negative n
 
         assert np.isclose(R_pos.max(), R_neg.max(), rtol=0.05), (
-            f"Maximum R values differ between positive and negative m: {R_pos.max()} vs {R_neg.max()}"
+            f"Maximum R values differ between positive and negative n: {R_pos.max()} vs {R_neg.max()}"
         )
         assert np.isclose(R_pos.min(), R_neg.min(), rtol=0.05), (
-            f"Minimum R values differ between positive and negative m: {R_pos.min()} vs {R_neg.min()}"
+            f"Minimum R values differ between positive and negative n: {R_pos.min()} vs {R_neg.min()}"
         )
         assert np.isclose(Z_pos.max(), Z_neg.max(), rtol=0.05), (
-            f"Maximum Z values differ between positive and negative m: {Z_pos.max()} vs {Z_neg.max()}"
+            f"Maximum Z values differ between positive and negative n: {Z_pos.max()} vs {Z_neg.max()}"
         )
         assert np.isclose(Z_pos.min(), Z_neg.min(), rtol=0.05), (
-            f"Minimum Z values differ between positive and negative m: {Z_pos.min()} vs {Z_neg.min()}"
+            f"Minimum Z values differ between positive and negative n: {Z_pos.min()} vs {Z_neg.min()}"
         )
 
 
-class TestNegativeMFilament:
-    """Tests specifically for negative m handling."""
+class TestNegativeNFilament:
+    """Tests specifically for negative n handling."""
 
     @pytest.mark.parametrize(
         "base_num_points, scale_points, prevent_synthetic_structure",
@@ -1170,11 +1164,11 @@ class TestNegativeMFilament:
             (100, False, False),
         ],
     )
-    def test_toroidal_negative_m_scale_points(
+    def test_toroidal_negative_n_scale_points(
         self, base_num_points, scale_points, prevent_synthetic_structure
     ):
-        """ToroidalFilamentTracer with negative m and scale_points must not produce degenerate num_points."""
-        mode = (-3, 2)
+        """ToroidalFilamentTracer with negative n and scale_points must not produce degenerate num_points."""
+        mode = (3, -2)
         R0, Z0, a = 1.8, 0.0, 0.5
         tracer = ToroidalFilamentTracer(
             mode,
@@ -1185,30 +1179,30 @@ class TestNegativeMFilament:
             scale_points=scale_points,
             prevent_synthetic_structure=prevent_synthetic_structure,
         )
-        # num_points must be at least as large as it would be for positive m
+        # num_points must be at least as large as it would be for positive n
         assert tracer.num_points >= 2, "num_points must be > 2"
         expected = base_num_points
         if scale_points:
-            expected = int(base_num_points * abs(mode[0]) / mode[1])
+            expected = int(base_num_points * abs(mode[0]) / abs(mode[1]))
         if prevent_synthetic_structure:
             expected = nextprime(expected)
         assert tracer.num_points == expected
 
         points, etas = tracer.trace()
         assert points.shape[0] == tracer.num_points
-        # negative m gets filaments that are antiparallel to the field line
+        # negative n gets filaments that are antiparallel to the field line
         phi_0 = points[0, 1]
         phi_1 = points[1, 1]
-        assert phi_1 < phi_0, "phi must decrease for negative m"
-        assert etas[1] < 0, "eta must decrease for negative m"
+        assert phi_1 < phi_0, "phi must decrease for negative n"
+        assert etas[1] < 0, "eta must decrease for negative n"
 
-    def test_negative_m_current_phasor_is_conjugate_of_positive_m(self):
-        """m=-3,n=2 must produce complex conjugate currents compared to m=3,n=2."""
+    def test_negative_n_current_phasor_is_conjugate_of_positive_n(self):
+        """n=-2 must produce complex conjugate currents compared to n=2."""
         R0, Z0, a = 1.8, 0.0, 0.5
         num_filaments = 7
 
         pos_tracer = ToroidalFilamentTracer((3, 2), R0, Z0, a, base_num_points=100)
-        neg_tracer = ToroidalFilamentTracer((-3, 2), R0, Z0, a, base_num_points=100)
+        neg_tracer = ToroidalFilamentTracer((3, -2), R0, Z0, a, base_num_points=100)
 
         pos_ds = pos_tracer.get_filament_ds(num_filaments=num_filaments)
         neg_ds = neg_tracer.get_filament_ds(num_filaments=num_filaments)
