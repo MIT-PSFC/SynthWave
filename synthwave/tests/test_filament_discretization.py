@@ -87,6 +87,7 @@ def test_biot_savart_open_arcs_equal_closed_loop():
     the next filament's start, so the sum over filaments must not depend on where
     the polyline is cut.
 
+    Here we compare a circular loop of 240 segments to 12 arcs of 20 segments each.
     np.gradient counted one extra segment per cut, a 4 percent difference for 12 arcs of 20 segments.
     """
     num_segments, num_arcs = 240, 12
@@ -108,7 +109,7 @@ def test_biot_savart_circular_loop_second_order():
     """On-axis field of a circular loop, B = mu_0 I a^2 / (2 (a^2 + z^2)^(3/2)).
 
     Segment-midpoint rule: relative error 1.3e-4 at 256 segments, reduced x4 per doubling of elements.
-    np.gradient: relative error 3.8e-3 at 256 segments, reduced x2 per doubling of elements.
+    np.gradient (old): relative error 3.8e-3 at 256 segments, reduced x2 per doubling of elements.
     """
     radius, z = 0.5, 0.0
     sensor = _point_sensors([[0.0, 0.0, z]], [[0.0, 0.0, 1.0]])
@@ -126,13 +127,13 @@ def test_biot_savart_circular_loop_second_order():
     )
 
 
-@pytest.mark.parametrize("mode", [(2, 1), (3, 2)])
+@pytest.mark.parametrize("mode", [(2, 1), (3, 2), (8, 7)])
 def test_trace_phi_second_order(eq_field, mode):
     """Toroidal angle along the traced filament converges at second order in points.
 
     Compared on a common eta grid against a 3200 base-point trace.
     Trapezoid phi: max error 0.009 deg at 200 base points, ratio 4 per doubling.
-    The shifted cumsum gave 1.9 deg at 200 points (about 2 pi (m/n) / num_points), ratio 2.
+    The shifted cumsum gave 1.9 deg at 200 points (about 2 pi (m/n) / num_points).
     """
     eta_grid = np.linspace(0.01, 2 * np.pi - 0.01, 3000)
 
@@ -159,9 +160,7 @@ def test_trace_phi_second_order(eq_field, mode):
 def test_direct_response_second_order_in_points(eq_field, sensor_details):
     """End-to-end: the sensor pattern of a 5/4 mode converges at second order.
 
-    High (m, n) modes have a small true signal at the wall, so the spurious end-point ring current dominated them.
-    
-    Against a 3200 base-point reference with 60 filaments, 
+    Against a 3200 base-point reference with 60 filaments,
     the pattern error at 200 base points is 0.06 percent now (was 17.5 percent).
     """
     mode = (5, 4)
@@ -178,7 +177,9 @@ def test_direct_response_second_order_in_points(eq_field, sensor_details):
     reference = response(3200)
     errors = {base: _pattern_error(response(base), reference) for base in (200, 400)}
 
-    assert errors[200] < 0.01, f"pattern error {100 * errors[200]:.3f} % at 200 base points"
+    assert errors[200] < 0.01, (
+        f"pattern error {100 * errors[200]:.3f} % at 200 base points"
+    )
     assert errors[200] / errors[400] > 3, (
         f"convergence ratio {errors[200] / errors[400]:.2f}, expected ~4 (second order)"
     )
