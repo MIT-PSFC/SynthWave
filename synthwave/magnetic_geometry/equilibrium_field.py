@@ -14,10 +14,14 @@ from synthwave.magnetic_geometry.utils import (
 def biot_savart_cartesian(
     eval_point: np.ndarray, filament_points: np.ndarray, filament_current: float
 ):
-    """Biot-savart law in cartesian coordinates."""
-    r_prime = eval_point - filament_points
+    """Biot-savart law in cartesian coordinates.
+
+    Segment-midpoint rule, one current element per polyline segment.
+    """
+    dl = filament_points[1:] - filament_points[:-1]
+    midpoints = 0.5 * (filament_points[1:] + filament_points[:-1])
+    r_prime = eval_point - midpoints
     r_prime_norm = np.linalg.norm(r_prime, axis=1)
-    dl = np.gradient(filament_points, axis=0)
     dl_cross_r = np.cross(dl, r_prime)
     B_segments = (
         (mu_0 / (4 * np.pi))

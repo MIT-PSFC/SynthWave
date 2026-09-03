@@ -77,7 +77,7 @@ def direct_response_inputs(sensor_details):
         _MODE,
         eq_field=eq_field,
         base_num_points=_BASE_NUM_POINTS,
-        default_trace_type=EquilibriumFilamentTracer.TraceType.SINGLE,
+        default_trace_type=EquilibriumFilamentTracer.TraceType.AVERAGE,
     )
     filament_list, current_list = tracer.get_filament_list(
         num_filaments=_NUM_FILAMENTS,
