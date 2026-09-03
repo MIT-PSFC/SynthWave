@@ -16,8 +16,38 @@ from synthwave.magnetic_geometry.equilibrium_field import (
 from synthwave.magnetic_geometry.utils import cylindrical_to_cartesian
 
 
+def filament_offsets(num_filaments: int) -> np.ndarray:
+    """Toroidal starting angle [rad] of each filament copy, evenly spaced over one turn."""
+    return np.linspace(0, 2 * np.pi, num_filaments, endpoint=False)
+
+
+def filament_currents(mode: tuple[int, int], num_filaments: int) -> np.ndarray:
+    """Complex current of each toroidally offset filament copy for a rotating (m, n) wave.
+
+    I_k = exp(i * n * phi_k) with phi_k from filament_offsets. The sign of n sets the
+    toroidal rotation direction, which is what a toroidal sensor array measures.
+    The poloidal direction follows from the field helicity and is set by the trace,
+    so m carries no sign.
+
+    The winding uses the UNREDUCED n:
+    geometry reduces (m, n) to lowest terms (same rational surface and field lines),
+    but a non-coprime mode (k*m, k*n) is the k-th harmonic of the (m, n) mode.
+    Same filaments, current pattern winding k times faster. For coprime modes nothing changes.
+
+    Modes on one rational surface therefore share a filament trace and a unit-current
+    flux matrix and differ only in this current vector.
+    """
+    return np.exp(1j * mode[1] * filament_offsets(num_filaments))
+
+
 class FilamentTracer(ABC):
-    """Abstract class for filament representation."""
+    """Abstract class for filament representation.
+
+    Mode convention: The sign of n is the toroidal rotation direction, which a toroidal
+    sensor array measures directly. m is the poloidal mode number and is never negative.
+    The poloidal direction follows from the field helicity, so negative n traces the same
+    field line antiparallel and winds its currents the other way (see filament_currents).
+    """
 
     def __init__(
         self,
@@ -31,7 +61,7 @@ class FilamentTracer(ABC):
 
         num_points = base_num_points
         if scale_points:
-            num_points = int(base_num_points * abs(self.m) / self.n)
+            num_points = int(base_num_points * abs(self.m) / abs(self.n))
         if prevent_synthetic_structure:
             num_points = nextprime(num_points)
 
@@ -59,9 +89,6 @@ class FilamentTracer(ABC):
         if num_filaments <= 0:
             raise ValueError("num_filaments must be a positive integer")
 
-        ratio = Fraction(self.m, self.n)
-        n_local = ratio.denominator
-
         if coordinate_system not in ["cylindrical", "cartesian", "toroidal"]:
             raise ValueError(
                 "coordinate_system must be either 'cylindrical', 'cartesian', or 'toroidal'"
@@ -71,7 +98,8 @@ class FilamentTracer(ABC):
         base_filament_points, filament_etas = self.trace()
 
         # Create toroidal offsets and corresponding currents
-        starting_angles = np.linspace(0, 2 * np.pi, num_filaments, endpoint=False)
+        starting_angles = filament_offsets(num_filaments)
+        currents = filament_currents((self.m, self.n), num_filaments)
 
         all_filament_points = np.repeat(
             base_filament_points[np.newaxis, :, :], num_filaments, axis=0
@@ -80,23 +108,13 @@ class FilamentTracer(ABC):
             :, np.newaxis
         ]  # Apply toroidal offsets
 
-        # Complex currents for rotating wave: I(phi) = I_0 * exp(i*sign(m)*n*phi)
-        # The sign of m determines the direction of the rotating wave
-        # The winding uses the UNREDUCED |n|:
-        # geometry reduces (m, n) to lowest terms (same rational surface and field lines),
-        # but a non-coprime mode (k*m, k*n) is the k-th harmonic of the (m, n) mode.
-        # Same filaments, current pattern winding k times faster.
-        # For coprime modes abs(n) == n_local and nothing changes.
-        m_sign = int(np.sign(ratio.numerator)) if ratio.numerator != 0 else 1
-        filament_currents = np.exp(1j * starting_angles * m_sign * abs(self.n))
-
         if coordinate_system == "cylindrical":
             ds = xr.Dataset(
                 data_vars={
                     "R": (("filament", "point"), all_filament_points[:, :, 0]),
                     "phi": (("filament", "point"), all_filament_points[:, :, 1]),
                     "Z": (("filament", "point"), all_filament_points[:, :, 2]),
-                    "current": (("filament"), filament_currents),
+                    "current": (("filament"), currents),
                 },
                 coords={
                     "filament": np.arange(num_filaments),
@@ -114,7 +132,7 @@ class FilamentTracer(ABC):
                     "x": (("filament", "point"), cartesian_points[0, :, :]),
                     "y": (("filament", "point"), cartesian_points[1, :, :]),
                     "z": (("filament", "point"), cartesian_points[2, :, :]),
-                    "current": (("filament"), filament_currents),
+                    "current": (("filament"), currents),
                 },
                 coords={
                     "filament": np.arange(num_filaments),
@@ -126,7 +144,7 @@ class FilamentTracer(ABC):
                 data_vars={
                     "eta": (("point"), filament_etas),
                     "phi": (("filament", "point"), all_filament_points[:, :, 1]),
-                    "current": (("filament"), filament_currents),
+                    "current": (("filament"), currents),
                 },
                 coords={
                     "filament": np.arange(num_filaments),
@@ -161,20 +179,13 @@ class FilamentTracer(ABC):
 
         filament_points_ds = self.get_filament_ds(num_filaments, coordinate_system)
 
-        filament_list = []
-        for i in range(num_filaments):
-            if coordinate_system == "cylindrical":
-                R = filament_points_ds["R"].isel(filament=i).values
-                phi = filament_points_ds["phi"].isel(filament=i).values
-                Z = filament_points_ds["Z"].isel(filament=i).values
-                filament_array = np.array([R, phi, Z]).T
-            elif coordinate_system == "cartesian":
-                x = filament_points_ds["x"].isel(filament=i).values
-                y = filament_points_ds["y"].isel(filament=i).values
-                z = filament_points_ds["z"].isel(filament=i).values
-                filament_array = np.array([x, y, z]).T
-            filament_list.append(filament_array)
-
+        names = (
+            ("R", "phi", "Z") if coordinate_system == "cylindrical" else ("x", "y", "z")
+        )
+        points = np.stack(
+            [filament_points_ds[name].values for name in names], axis=-1
+        )  # Shape (num_filaments, N, 3)
+        filament_list = list(points)
         current_list = filament_points_ds["current"].values.tolist()
 
         return filament_list, current_list
@@ -255,7 +266,7 @@ class ToroidalFilamentTracer(FilamentTracer):
 
         filament_points = np.column_stack((R, phi, Z))
 
-        if np.sign(self.m * self.n) < 0:
+        if self.n < 0:
             # trace should go antiparallel to the field
             # Flip the arrays and reverse the direction of filament etas
             filament_points = filament_points[::-1]
@@ -301,7 +312,9 @@ class EquilibriumFilamentTracer(FilamentTracer):
         helicity_sign : int, optional
             Sign of the helicity used when following the field lines. A value of
             ``+1`` traces in the default direction, while ``-1`` reverses the direction.
-            If ``None`` (default), the sign is inferred from the sign of ``m``.
+            If ``None`` (default), the sign is inferred from the sign of ``n``: positive n
+            traces parallel to the field, negative n antiparallel (the mirror mode rotating
+            the other way toroidally). The sign of m is ignored.
 
         """
         super().__init__(
@@ -313,7 +326,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
         self.eq_field = eq_field
         self.default_trace_type = default_trace_type
         self.helicity_sign = (
-            helicity_sign if helicity_sign is not None else (1 if self.m >= 0 else -1)
+            helicity_sign if helicity_sign is not None else (1 if self.n >= 0 else -1)
         )
         self.trace_cache = {}
 
