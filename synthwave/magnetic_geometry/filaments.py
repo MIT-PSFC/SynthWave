@@ -270,8 +270,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
     class TraceType(Enum):
         CYLINDRICAL = 0  # Cylindrical approximation of the magnetic geometry
         NAIVE = 1  # Naive tracing, following the rational surface but not the field
-        SINGLE = 2  # Single tracing method, using the magnetic field to determine d(phi)/d(eta)
-        AVERAGE = 3  # Average tracing method, using the magnetic field to determine d(phi)/d(eta) and averaging between points
+        AVERAGE = 2  # Field-line tracing, d(phi)/dl from the magnetic field integrated per segment (trapezoid)
 
     def __init__(
         self,
@@ -280,7 +279,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
         base_num_points: Optional[int] = 601,
         scale_points: Optional[bool] = True,
         prevent_synthetic_structure: Optional[bool] = True,
-        default_trace_type: TraceType = TraceType.SINGLE,
+        default_trace_type: TraceType = TraceType.AVERAGE,
         helicity_sign: Optional[int] = None,
     ):
         """Initialize an equilibrium filament.
@@ -332,8 +331,8 @@ class EquilibriumFilamentTracer(FilamentTracer):
             If ``None``, the value stored in ``self.num_points`` is used.
         trace_type : EquilibriumFilamentTracer.TraceType, optional
             Tracing strategy to use. This controls how the field is followed when
-            computing the filament shape (e.g., cylindrical approximation, naive,
-            single-point, or averaged tracing).
+            computing the filament shape (cylindrical approximation, naive rational
+            surface, or field-line tracing, see TraceType).
 
         Returns
         -------
@@ -438,34 +437,19 @@ class EquilibriumFilamentTracer(FilamentTracer):
             filament_points = np.column_stack(
                 (poloidal_points[:, 0], phi, poloidal_points[:, 1])
             )
-        elif trace_type in [
-            EquilibriumFilamentTracer.TraceType.SINGLE,
-            EquilibriumFilamentTracer.TraceType.AVERAGE,
-        ]:
+        elif trace_type == EquilibriumFilamentTracer.TraceType.AVERAGE:
             # determine d(phi)/d(eta) from magnetic field
             R = poloidal_points[:, 0]
             Z = poloidal_points[:, 1]
             B = self.eq_field.get_field_at_point(R, Z)
 
-            # Switching to improved d_phi formula from the below:
-            # d_eta = np.mean(np.diff(filament_etas))
-            # d_phi = _d_phi(r, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1], d_eta)
-
-            # Compute segment lengths with wraparound so the last segment goes from
-            # the final point back to the first
-            dR = np.roll(R, -1) - R
-            dZ = np.roll(Z, -1) - Z
-            dl = np.sqrt(dR**2 + dZ**2)
-            d_phi = self.helicity_sign * _d_phi_dl(
-                dl, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1]
-            )
-
-            if trace_type == EquilibriumFilamentTracer.TraceType.SINGLE:
-                phi = np.cumsum(d_phi) - d_phi[0]
-            else:
-                # Average d_phi between adjacent points
-                d_phi_avg = (d_phi + np.roll(d_phi, -1)) / 2
-                phi = np.cumsum(d_phi_avg) - d_phi_avg[0]
+            # phi_k is the integral of d(phi)/dl over the segments BEFORE point k,
+            # so phi_0 = 0 exactly and no segment is shifted
+            # d(phi)/dl is evaluated at the points and integrated per segment with the trapezoid rule (second order).
+            dl = np.sqrt(np.diff(R) ** 2 + np.diff(Z) ** 2)
+            dphi_dl = _d_phi_dl(1.0, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1])
+            d_phi = self.helicity_sign * dl * 0.5 * (dphi_dl[:-1] + dphi_dl[1:])
+            phi = np.concatenate([[0.0], np.cumsum(d_phi)])
 
             # Numerical correction to ensure final point is at the proper angle.
             # sign_Bt carries the direction of the toroidal field; helicity_sign

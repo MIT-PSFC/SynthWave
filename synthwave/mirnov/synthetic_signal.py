@@ -39,11 +39,13 @@ def direct_response_biot_savart(
         filament_pts = filament_pts[valid]
         if len(filament_pts) < 2:
             continue
-        # r_prime: (n_sensors, n_pts, 3)
-        r_prime = sensor_positions[:, None, :] - filament_pts[None, :, :]
-        r_prime_norm = np.linalg.norm(r_prime, axis=2)  # (n_sensors, n_pts)
-        dl = np.gradient(filament_pts, axis=0)  # (n_pts, 3)
-        dl_cross_r = np.cross(dl[None, :, :], r_prime)  # (n_sensors, n_pts, 3)
+        # One current element per polyline segment, evaluated at its midpoint
+        dl = filament_pts[1:] - filament_pts[:-1]  # (n_seg, 3)
+        midpoints = 0.5 * (filament_pts[1:] + filament_pts[:-1])  # (n_seg, 3)
+        # r_prime: (n_sensors, n_seg, 3)
+        r_prime = sensor_positions[:, None, :] - midpoints[None, :, :]
+        r_prime_norm = np.linalg.norm(r_prime, axis=2)  # (n_sensors, n_seg)
+        dl_cross_r = np.cross(dl[None, :, :], r_prime)  # (n_sensors, n_seg, 3)
         B_total = np.sum(
             (mu_0 / (4 * np.pi)) * dl_cross_r / r_prime_norm[:, :, None] ** 3,
             axis=1,
