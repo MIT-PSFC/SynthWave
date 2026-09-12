@@ -1,5 +1,4 @@
 import numpy as np
-from OpenFUSIONToolkit.ThinCurr.meshing import ThinCurr_periodic_toroid
 from sympy import nextprime
 
 
@@ -39,6 +38,8 @@ def wrapped_diff(phase1: np.ndarray, phase2: np.ndarray) -> np.ndarray:
 
 
 def create_torus_mesh(R0, a, ntheta=64, nphi=128):
+    from OpenFUSIONToolkit.ThinCurr.meshing import ThinCurr_periodic_toroid
+
     # Create r_grid: [nphi, ntheta, 3] array defining the surface of one field period
     nfp = 1
     # I want these to be as high resolution as possible without segfaulting ThinCurr
