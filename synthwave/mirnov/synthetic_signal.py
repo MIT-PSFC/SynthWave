@@ -1,16 +1,18 @@
-import os
-from typing import Optional
+from __future__ import annotations
 
-import matplotlib.pyplot as plt
+import os
+from typing import TYPE_CHECKING, Optional
+
 import numpy as np
-import pyvista
-import vtk
 import xarray as xr
-from OpenFUSIONToolkit import OFT_env
-from OpenFUSIONToolkit.ThinCurr import ThinCurr
 from scipy.constants import mu_0
 
 from synthwave.magnetic_geometry.filaments import FilamentTracer
+
+# OpenFUSIONToolkit loads its shared libraries on import, so the ThinCurr functions
+# import it themselves and the Biot-Savart functions here stay usable without it
+if TYPE_CHECKING:
+    from OpenFUSIONToolkit import OFT_env
 
 
 def filament_flux_matrix(
@@ -116,6 +118,7 @@ def direct_response_thincurr(
 
     From testing, the vessel response has minimal impact on the phases, so this can be used for spectral analysis.
     """
+    from OpenFUSIONToolkit.ThinCurr import ThinCurr
 
     # Create thin wall model
     tw_model = ThinCurr(oft_env)
@@ -211,10 +214,10 @@ def frequency_response_thincurr(
         direct_response (np.ndarray): Complex array of sensor signals due to direct filament coupling [T]
         vessel_response (np.ndarray): Complex array of sensor signals due to vessel currents [T]
     """
+    from OpenFUSIONToolkit.ThinCurr import ThinCurr
 
-    # Directory for caching inductance matrices, which can take a long time to compute
+    # working directory for caching inductance matrices, which can take a long time to compute
     # ThinCurr checks the hashes of input files to determine if cache is valid
-
     # Create thin wall model
     tw_model = ThinCurr(oft_env)
     tw_model.setup_model(
@@ -270,6 +273,10 @@ def frequency_response_thincurr(
     total_response = direct_response + vessel_response
 
     if debug_plot_path is not None:
+        import matplotlib.pyplot as plt
+        import pyvista
+        import vtk
+
         # Only plotting to file, don't try to use a display
         pyvista.OFF_SCREEN = True
         vtk.vtkLogger.SetStderrVerbosity(vtk.vtkLogger.VERBOSITY_OFF)
