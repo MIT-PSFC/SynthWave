@@ -14,8 +14,10 @@ from synthwave.magnetic_geometry.equilibrium_field import (
 )
 from synthwave.magnetic_geometry.filaments import (
     EquilibriumFilamentTracer,
+    FilamentTraceError,
     FilamentTracer,
     ToroidalFilamentTracer,
+    rational_surface_radii,
 )
 
 FIG_DIR = os.path.join(PACKAGE_ROOT, "tests", "figures")
@@ -1331,3 +1333,48 @@ class TestFilamentValueErrors:
         )
         with pytest.raises(ValueError, match="coordinate_system"):
             tracer.get_filament_list(num_filaments=7, coordinate_system="toroidal")
+
+
+class TestVectorizedTrace:
+    """The bracketed batched Newton surface solve and the closure check."""
+
+    @pytest.fixture(scope="class")
+    def eq_field(self, cmod_eqdsk):
+        return EquilibriumField(cmod_eqdsk)
+
+    @pytest.mark.parametrize("mode", [(1, 1), (2, 1), (3, 2), (4, 3), (3, 1), (2, -1)])
+    def test_points_lie_on_rational_surface(self, eq_field, mode):
+        tracer = EquilibriumFilamentTracer(mode, eq_field, base_num_points=401)
+        points, _ = tracer.trace()
+        psi_q = eq_field.get_psi_of_q(abs(Fraction(*mode)))
+        delta_psi = abs(eq_field.eqdsk.sibdry - eq_field.eqdsk.simagx)
+        residual = np.abs(eq_field.psi.ev(points[:, 0], points[:, 2]) - psi_q)
+        assert residual.max() / delta_psi < 1e-6
+
+    def test_surface_outside_boundary_is_a_failed_trace(self, eq_field):
+        eqdsk = eq_field.eqdsk
+        psi_outside = eqdsk.sibdry + 0.5 * (eqdsk.sibdry - eqdsk.simagx)
+        etas = np.linspace(0, 2 * np.pi, 101)
+        with pytest.raises(FilamentTraceError, match="not closed inside the boundary"):
+            rational_surface_radii(eq_field, psi_outside, np.cos(etas), np.sin(etas))
+
+    def test_closure_miss_is_a_failed_trace(self, eq_field):
+        """The C-Mod 1/1 field line q misses 1 by about 1.2 percent.
+
+        A closure_rtol below that raises and caches nothing, an infinite one restores
+        the rescaled trace, so the check is the only gate.
+        """
+        strict = EquilibriumFilamentTracer(
+            (1, 1), eq_field, base_num_points=401, closure_rtol=1e-3
+        )
+        with pytest.raises(FilamentTraceError, match="misses"):
+            strict.trace()
+        assert strict.trace_cache == {}
+        with pytest.raises(FilamentTraceError):
+            strict.get_filament_list(num_filaments=4)
+
+        lenient = EquilibriumFilamentTracer(
+            (1, 1), eq_field, base_num_points=401, closure_rtol=np.inf
+        )
+        points, _ = lenient.trace()
+        np.testing.assert_allclose(abs(points[-1, 1]), 2 * np.pi, rtol=1e-12)
