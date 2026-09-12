@@ -18,13 +18,17 @@ if TYPE_CHECKING:
 def filament_flux_matrix(
     sensor_details: xr.Dataset,
     filament_list: list,
-    max_block_elements: int = 2**20,
+    max_block_elements: int = 2**18,
 ) -> np.ndarray:
     """Vectorized Biot-Savart: unit-current flux of every filament through every sensor.
 
-    Every polyline segment of every filament is one current element evaluated at its
-    midpoint. The segments of all filaments are stacked and processed in blocks so the
-    (n_sensors, n_segments) work arrays stay below max_block_elements each.
+    Every polyline segment of every filament is one current element dl at its midpoint m.
+    Its flux through a sensor at p with normal n is proportional to (dl x (p - m)) . n / |p - m|^3.
+    The numerator expands to dl . (p x n) - n . (dl x m), so over all sensor and segment
+    pairs it is one rank 6 matrix product. Only the distance is formed elementwise.
+    The segments of all filaments are stacked and processed in blocks
+    so the (n_sensors, n_segments) work arrays stay below max_block_elements each,
+    which keeps them in cache.
 
     The direct response of any current pattern on these filaments is current_list @ flux,
     so modes sharing a filament set (harmonics on one rational surface) share this matrix.
@@ -60,23 +64,22 @@ def filament_flux_matrix(
     midpoints = np.concatenate(midpoint_parts)
     owner = np.concatenate(owner_parts)
 
+    # (dl x (p - m)) . n = dl . (p x n) - n . (dl x m)
+    sensor_factors = np.hstack(
+        (np.cross(sensor_positions, sensor_normals), -sensor_normals)
+    )
+    segment_factors = np.hstack((dl, np.cross(dl, midpoints)))
+
     block = max(1, max_block_elements // max(num_sensors, 1))
     for start in range(0, len(dl), block):
         stop = start + block
-        # Components as (n_sensors, n_seg) arrays, no (..., 3) temporaries or np.cross
+        # Distance components as (n_sensors, n_seg) arrays
         r_x = sensor_positions[:, 0:1] - midpoints[None, start:stop, 0]
         r_y = sensor_positions[:, 1:2] - midpoints[None, start:stop, 1]
         r_z = sensor_positions[:, 2:3] - midpoints[None, start:stop, 2]
-        inv_r3 = (r_x * r_x + r_y * r_y + r_z * r_z) ** -1.5
-        dl_x = dl[None, start:stop, 0]
-        dl_y = dl[None, start:stop, 1]
-        dl_z = dl[None, start:stop, 2]
-        # (dl x r) . n as a scalar triple product
-        contribution = (
-            sensor_normals[:, 0:1] * (dl_y * r_z - dl_z * r_y)
-            + sensor_normals[:, 1:2] * (dl_z * r_x - dl_x * r_z)
-            + sensor_normals[:, 2:3] * (dl_x * r_y - dl_y * r_x)
-        ) * inv_r3
+        r2 = r_x * r_x + r_y * r_y + r_z * r_z
+        contribution = sensor_factors @ segment_factors[start:stop].T
+        contribution /= r2 * np.sqrt(r2)
         # Segments are stored filament by filament, so each filament in the block is one
         # contiguous run: reduce every run and add it to its owner row
         owner_block = owner[start:stop]
