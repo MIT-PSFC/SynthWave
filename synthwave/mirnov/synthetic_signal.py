@@ -137,6 +137,7 @@ def frequency_response_thincurr(
     vessel_cache_path: Optional[str] = None,
     msensor_cache_path: Optional[str] = None,
     mcoil_cache_path: Optional[str] = None,
+    hodlr_svd_tol: Optional[float] = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Calculate the measured frequency response at the given sensors due to filaments defined by the tracer.
@@ -154,7 +155,12 @@ def frequency_response_thincurr(
         sensor_file_path (str): Path to the sensor file for ThinCurr
         sensor_details (xr.Dataset): Dataset containing details about the sensors, used for debug plotting
         debug_plot_path (str, optional): If provided, path prefix to save debug plots
-
+        vessel_cache_path (str, optional): Cache file for the vessel self-inductance matrix
+        msensor_cache_path (str, optional): Cache file for the mesh -> sensor and coil -> sensor mutual inductances
+        mcoil_cache_path (str, optional): Cache file for the coil -> mesh mutual inductance
+        hodlr_svd_tol (float, optional): Absolute SVD tolerance for HODLR compression of the vessel
+            self-inductance matrix. None uses the ThinCurr default, which is relative to the mesh cell size.
+            Tighter values reduce compression error at the cost of build time.
 
     Returns:
         total_response (np.ndarray): Complex array of total sensor signals [T]
@@ -167,6 +173,8 @@ def frequency_response_thincurr(
 
     # Create thin wall model
     tw_model = ThinCurr(oft_env)
+    if hodlr_svd_tol is not None:
+        tw_model.set_hodlr_options(L_svd_tol=hodlr_svd_tol)
     tw_model.setup_model(
         mesh_file=mesh_file,
         xml_filename=os.path.join(working_directory, "oft_in.xml"),

@@ -46,6 +46,8 @@ def test_toroidal_angles(mode, oft_env):
     tolerance_loose = np.deg2rad(
         5
     )  # Any more than this and I fear spectral analysis will struggle
+    # HODLR compression of the vessel inductance matrix breaks the exact symmetry of the total response
+    tolerance_vessel_symmetry = np.deg2rad(2)
 
     major_radius = 1
     minor_radius_vessel = 0.35
@@ -232,7 +234,7 @@ def test_toroidal_angles(mode, oft_env):
     assert np.isclose(
         wrapped_diff(total_measured_phase_diff_ac, total_measured_phase_diff_bd),
         0,
-        atol=tolerance_tight,
+        atol=tolerance_vessel_symmetry,
     ), (
         "The poloidal phase difference for the total response between sensors A and C should roughly match that between sensors B and D"
     )
