@@ -262,6 +262,21 @@ class TestCocos:
                 f"Expected COCOS {expected_cocos} for C-Mod, got {cocos}"
             )
 
+        @pytest.mark.skipif(
+            condition=not os.path.exists(
+                os.path.join(
+                    PACKAGE_ROOT,
+                    "..",
+                    "submodules",
+                    "OpenFUSIONToolkit",
+                    "examples",
+                    "TokaMaker",
+                    "DIIID",
+                    "g192185.02440",
+                )
+            ),
+            reason="Test requires DIII-D data which is not open source",
+        )
         def test_detect_cocos_d3d(self, eqdsk_d3d):
             """DIII-D uses EFIT convention (sigma_RphiZ=+1, e_Bp=0, psi increasing).
             COCOS depends on sign(Ip) and sign(B0)
@@ -345,7 +360,24 @@ class TestCocos:
             "eqdsk",
             [
                 "eqdsk_cmod",
-                "eqdsk_d3d",
+                pytest.param(
+                    "eqdsk_d3d",
+                    marks=pytest.mark.skipif(
+                        condition=not os.path.exists(
+                            os.path.join(
+                                PACKAGE_ROOT,
+                                "..",
+                                "submodules",
+                                "OpenFUSIONToolkit",
+                                "examples",
+                                "TokaMaker",
+                                "DIIID",
+                                "g192185.02440",
+                            )
+                        ),
+                        reason="Test requires DIII-D data which is not open source",
+                    ),
+                ),
                 pytest.param(
                     "eqdsk_tcv",
                     marks=pytest.mark.skipif(
@@ -392,7 +424,24 @@ class TestCocos:
             "eqdsk",
             [
                 "eqdsk_cmod",
-                "eqdsk_d3d",
+                pytest.param(
+                    "eqdsk_d3d",
+                    marks=pytest.mark.skipif(
+                        condition=not os.path.exists(
+                            os.path.join(
+                                PACKAGE_ROOT,
+                                "..",
+                                "submodules",
+                                "OpenFUSIONToolkit",
+                                "examples",
+                                "TokaMaker",
+                                "DIIID",
+                                "g192185.02440",
+                            )
+                        ),
+                        reason="Test requires DIII-D data which is not open source",
+                    ),
+                ),
                 pytest.param(
                     "eqdsk_tcv",
                     marks=pytest.mark.skipif(
@@ -449,7 +498,24 @@ class TestCocos:
             "eqdsk",
             [
                 "eqdsk_cmod",
-                "eqdsk_d3d",
+                pytest.param(
+                    "eqdsk_d3d",
+                    marks=pytest.mark.skipif(
+                        condition=not os.path.exists(
+                            os.path.join(
+                                PACKAGE_ROOT,
+                                "..",
+                                "submodules",
+                                "OpenFUSIONToolkit",
+                                "examples",
+                                "TokaMaker",
+                                "DIIID",
+                                "g192185.02440",
+                            )
+                        ),
+                        reason="Test requires DIII-D data which is not open source",
+                    ),
+                ),
                 pytest.param(
                     "eqdsk_tcv",
                     marks=pytest.mark.skipif(

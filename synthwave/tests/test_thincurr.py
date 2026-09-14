@@ -5,7 +5,6 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import pytest
 import xarray as xr
-from OpenFUSIONToolkit import OFT_env
 from sympy import nextprime
 
 from synthwave import PACKAGE_ROOT
@@ -31,13 +30,6 @@ from synthwave.mirnov.synthetic_signal import (
 pytestmark = pytest.mark.serial
 
 
-# Fixture for oft environment so only one is created for all tests
-@pytest.fixture(scope="session")
-def oft_env_fixture():
-    oft_env = OFT_env(nthreads=2)
-    return oft_env
-
-
 @pytest.mark.parametrize(
     "mode",
     [
@@ -49,7 +41,7 @@ def oft_env_fixture():
     ],
     ids=["m2n1", "m3n2", "m-3n2", "m3n1", "m4n3"],
 )
-def test_toroidal_angles(mode, oft_env_fixture):
+def test_toroidal_angles(mode, oft_env):
     tolerance_tight = np.deg2rad(1)
     tolerance_loose = np.deg2rad(
         5
@@ -171,7 +163,7 @@ def test_toroidal_angles(mode, oft_env_fixture):
         )
 
         total_response, direct_response, _vessel_response = frequency_response_thincurr(
-            oft_env=oft_env_fixture,
+            oft_env=oft_env,
             tracer=toroidal_tracer,
             freq=10e3,
             mesh_file=torus_mesh_file,
@@ -317,7 +309,7 @@ def test_gen_OFT_sensors_file():
         assert len(content) > 0
 
 
-def test_direct_response_thincurr_matches_frequency_response(oft_env_fixture):
+def test_direct_response_thincurr_matches_frequency_response(oft_env):
     """direct_response_thincurr must return the same direct component as frequency_response_thincurr."""
 
     major_radius = 1
@@ -370,13 +362,11 @@ def test_direct_response_thincurr_matches_frequency_response(oft_env_fixture):
         filament_list, current_list = toroidal_tracer.get_filament_list(
             num_filaments=num_filaments
         )
-        gen_OFT_filament_and_eta_file(
-            working_directory, filament_list, [1e-6] * len(filament_list)
-        )
+        gen_OFT_filament_and_eta_file(working_directory, filament_list, [1e-6])
 
         total_response, direct_response_freq, vessel_response = (
             frequency_response_thincurr(
-                oft_env=oft_env_fixture,
+                oft_env=oft_env,
                 tracer=toroidal_tracer,
                 freq=10e3,
                 mesh_file=torus_mesh_file,
@@ -386,7 +376,7 @@ def test_direct_response_thincurr_matches_frequency_response(oft_env_fixture):
         )
 
         direct_response_only = direct_response_thincurr(
-            oft_env=oft_env_fixture,
+            oft_env=oft_env,
             tracer=toroidal_tracer,
             mesh_file=torus_mesh_file,
             sensor_details=sensor_details,
