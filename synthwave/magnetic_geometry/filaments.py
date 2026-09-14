@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 from fractions import Fraction
-from math import gcd
 from typing import Optional
 
 import numpy as np
@@ -22,14 +21,13 @@ class FilamentTracer(ABC):
 
     def __init__(
         self,
-        m: int,
-        n: int,
+        mode: tuple[int, int],
         base_num_points: Optional[int] = 800,
         scale_points: Optional[bool] = True,
         prevent_synthetic_structure: Optional[bool] = True,
     ):
-        self.m = m
-        self.n = n
+        self.m = mode[0]
+        self.n = mode[1]
 
         num_points = base_num_points
         if scale_points:
@@ -63,12 +61,6 @@ class FilamentTracer(ABC):
 
         ratio = Fraction(self.m, self.n)
         n_local = ratio.denominator
-        if gcd(num_filaments, n_local) != 1:
-            raise ValueError(
-                f"num_filaments={num_filaments} and n_local={n_local} are not coprime "
-                f"(gcd={gcd(num_filaments, n_local)}), which would produce overlapping filaments. "
-                f"Choose a num_filaments that is coprime with {n_local}."
-            )
 
         if coordinate_system not in ["cylindrical", "cartesian", "toroidal"]:
             raise ValueError(
@@ -195,23 +187,23 @@ class ToroidalFilamentTracer(FilamentTracer):
 
     def __init__(
         self,
-        m: int,
-        n: int,
+        mode: tuple[int, int],
         R0: float,
         Z0: float,
         a: float,
         base_num_points: Optional[int] = 1000,
         scale_points: Optional[bool] = True,
         prevent_synthetic_structure: Optional[bool] = True,
+        sign_Ip: Optional[int] = 1,
+        sign_B0: Optional[int] = 1,
     ):
         """Initialize a toroidal filament with a circular cross-section.
+        Follows COCOS 1 convention for tracing.
 
         Parameters
         ----------
-        m : int
-            Poloidal mode number
-        n : int
-            Toroidal mode number
+        mode : tuple[int, int]
+            Mode number (m, n)
         R0 : float
             Major radius of the magnetic axis
         Z0 : float
@@ -224,24 +216,45 @@ class ToroidalFilamentTracer(FilamentTracer):
             Whether to scale the number of points based on m/n ratio. If true, multiplies base_num_points by m/n to ensure adequate resolution.
         prevent_synthetic_structure : bool, optional
             Whether to adjust the number of points to the next prime number to avoid synthetic structures in simulations.
+        sign_Ip : int, optional
+            Sign of the plasma current. Default is +1.
+        sign_B0 : int, optional
+            Sign of the toroidal magnetic field. Default is +1.
         """
         super().__init__(
-            m, n, int(base_num_points), scale_points, prevent_synthetic_structure
+            mode, int(base_num_points), scale_points, prevent_synthetic_structure
         )
         self.R0 = R0
         self.Z0 = Z0
         self.a = a
+        self.sign_Ip = sign_Ip
+        self.sign_B0 = sign_B0
 
     def trace(self, num_points: Optional[int] = None) -> tuple[np.ndarray, np.ndarray]:
-        # Create a circular filament around the magnetic axis
+        """Create a circular filament in a toroidal geometry.
+        This uses COCOS 1, where phi is CCW angle when viewed from the top and eta is CW when viewing the right poloidal cross section.
+
+        Args:
+            num_points (Optional[int]): Number of points to use for tracing a single poloidal turn
+
+        Returns:
+            tuple[np.ndarray, np.ndarray]: Tuple containing arrays describing the filament coordinates and corresponding eta values
+        """
         if num_points is None:
             num_points = self.num_points
-        phi = np.linspace(0, 2 * np.pi * self.m / self.n, num_points)
+        mode_ratio = np.abs(self.m / self.n)
+        phi = np.linspace(0, 2 * np.pi * mode_ratio, num_points)
         filament_etas = np.linspace(0, 2 * np.pi, num_points)
-        R = self.R0 + self.a * np.cos(filament_etas)
-        Z = self.Z0 + self.a * np.sin(filament_etas)
+        R = self.R0 + (self.a * np.cos(filament_etas)) * self.sign_B0
+        Z = self.Z0 - (self.a * np.sin(filament_etas)) * self.sign_Ip
 
         filament_points = np.column_stack((R, phi, Z))
+
+        if np.sign(self.m * self.n) < 0:
+            # trace should go antiparallel to the field
+            # Flip the arrays and reverse the direction of filament etas
+            filament_points = filament_points[::-1]
+            filament_etas = -filament_etas
 
         return filament_points, filament_etas
 
@@ -257,8 +270,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
 
     def __init__(
         self,
-        m: int,
-        n: int,
+        mode: tuple[int, int],
         eq_field: EquilibriumField,
         base_num_points: Optional[int] = 601,
         scale_points: Optional[bool] = True,
@@ -270,10 +282,8 @@ class EquilibriumFilamentTracer(FilamentTracer):
 
         Parameters
         ----------
-        m : int
-            Poloidal mode number
-        n : int
-            Toroidal mode number
+        mode : tuple[int, int]
+            Mode number (m, n)
         eq_field : EquilibriumField
             EquilibriumField object containing the magnetic field data
         base_num_points : int, optional
@@ -291,8 +301,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
 
         """
         super().__init__(
-            m,
-            n,
+            mode,
             int(base_num_points),
             scale_points,
             prevent_synthetic_structure,
@@ -300,7 +309,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
         self.eq_field = eq_field
         self.default_trace_type = default_trace_type
         self.helicity_sign = (
-            helicity_sign if helicity_sign is not None else (1 if m >= 0 else -1)
+            helicity_sign if helicity_sign is not None else (1 if self.m >= 0 else -1)
         )
         self.trace_cache = {}
 
@@ -442,7 +451,9 @@ class EquilibriumFilamentTracer(FilamentTracer):
             dR = np.roll(R, -1) - R
             dZ = np.roll(Z, -1) - Z
             dl = np.sqrt(dR**2 + dZ**2)
-            d_phi = _d_phi_dl(dl, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1])
+            d_phi = self.helicity_sign * _d_phi_dl(
+                dl, R, np.sqrt(B[0] ** 2 + B[2] ** 2), B[1]
+            )
 
             if trace_type == EquilibriumFilamentTracer.TraceType.SINGLE:
                 phi = np.cumsum(d_phi) - d_phi[0]
@@ -455,6 +466,11 @@ class EquilibriumFilamentTracer(FilamentTracer):
             # sign_Bt carries the direction of the toroidal field; helicity_sign
             # carries whether we trace parallel (+1) or antiparallel (-1) to the field.
             known_phi_end = self.helicity_sign * sign_Bt * 2 * np.pi * m_local / n_local
+
+            q_eff = np.abs(phi[-1]) / (2 * np.pi)
+            logger.debug(
+                f"m={self.m} n={self.n}: psi_q={psi_q:.6f}, q_requested={m_local / n_local:.4f}, q_eff={q_eff:.4f}"
+            )
 
             # If actual phi significantly deviates from known phis, log a critical warning
             if not np.isclose(phi[-1], known_phi_end, atol=0.5):
