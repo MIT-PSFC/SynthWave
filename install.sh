@@ -94,13 +94,25 @@ else
     TEMP_DIR=$(mktemp -d)
     trap "rm -rf $TEMP_DIR" EXIT
     
-    curl -L -o "$TEMP_DIR/$TARBALL" "$URL" || wget -O "$TEMP_DIR/$TARBALL" "$URL"
+    # -f makes HTTP errors a real failure instead of saving the error page as the
+    # tarball. Concurrent CI jobs can get throttled by GitHub, so retry with backoff.
+    curl -fL --retry 5 --retry-delay 5 --retry-all-errors \
+         -o "$TEMP_DIR/$TARBALL" "$URL" \
+        || wget --tries=5 --waitretry=5 -O "$TEMP_DIR/$TARBALL" "$URL" \
+        || error "Download failed: $URL"
+
+    # A throttled or redirected response can still land as a tiny file
+    DOWNLOAD_BYTES=$(stat -c %s "$TEMP_DIR/$TARBALL" 2>/dev/null || echo 0)
+    if [ "$DOWNLOAD_BYTES" -lt 1000000 ]; then
+        error "Download is only ${DOWNLOAD_BYTES} bytes, expected ~90 MB. GitHub likely rate-limited this request."
+    fi
     
     # Verify checksum if available
     if [ -n "${CHECKSUMS[$TARBALL]}" ]; then
         info "Verifying checksum..."
         if command -v sha256sum &>/dev/null; then
-            echo "${CHECKSUMS[$TARBALL]}  $TEMP_DIR/$TARBALL" | sha256sum -c - || error "Checksum verification failed!"
+            echo "${CHECKSUMS[$TARBALL]}  $TEMP_DIR/$TARBALL" | sha256sum -c - \
+                || error "Checksum mismatch for $TARBALL - the download is corrupt or the release asset changed."
             success "Checksum verified"
         else
             warn "sha256sum not available, skipping checksum verification"
