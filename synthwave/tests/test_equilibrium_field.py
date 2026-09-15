@@ -6,7 +6,7 @@ import freeqdsk
 import numpy as np
 import pytest
 import xarray as xr
-from scipy.interpolate import interp1d
+from equilibrium_helpers import tars_slice_to_eqdsk
 
 from synthwave import PACKAGE_ROOT
 from synthwave.magnetic_geometry.equilibrium_field import (
@@ -177,60 +177,9 @@ class TestCocos:
         tidx = 1100
 
         ds = xr.open_dataset(ds_input_path, engine="h5netcdf")
-        ds_eq = ds.sel(time_idx=tidx).isel(frequency_idx=0)
+        ds_eq = ds.sel(time_idx=tidx).isel(frequency=0)
 
-        eqdsk = self.xr_to_eqdsk(ds_eq)
-        return eqdsk
-
-    @staticmethod
-    def xr_to_eqdsk(ds_eq):
-        nx = len(ds_eq["rgrid"])
-        ny = len(ds_eq["zgrid"])
-
-        def _resample_to_nx(arr: np.ndarray) -> np.ndarray:
-            arr = np.array(arr, dtype=float)
-            valid = np.isfinite(arr)
-            if not np.any(valid):
-                return np.zeros(nx)
-            if not np.all(valid):
-                xs = np.arange(len(arr))
-                arr = np.interp(xs, xs[valid], arr[valid])
-            if len(arr) == nx:
-                return arr
-            psi_old = np.linspace(0, 1, len(arr))
-            psi_new = np.linspace(0, 1, nx)
-            return interp1d(psi_old, arr, kind="linear")(psi_new)
-
-        eqdsk = freeqdsk.geqdsk.GEQDSKFile(
-            comment="TCV LIUQE",
-            shot=82878,
-            nx=nx,
-            ny=ny,
-            rdim=float(ds_eq["rgrid"][-1] - ds_eq["rgrid"][0]),
-            zdim=float(ds_eq["zgrid"][-1] - ds_eq["zgrid"][0]),
-            rcentr=float(ds_eq["rgrid"][nx // 2]),
-            rleft=float(ds_eq["rgrid"][0]),
-            zmid=float(ds_eq["zgrid"][ny // 2]),
-            rmagx=float(ds_eq["rmagx"]),
-            zmagx=float(ds_eq["zmagx"]),
-            simagx=float(ds_eq["simagx"]),
-            sibdry=float(ds_eq["sibdry"]),
-            bcentr=float(ds_eq["bcentr"]),
-            cpasma=float(ds_eq["cpasma"]),
-            fpol=_resample_to_nx(ds_eq["fpol"].values),
-            pres=_resample_to_nx(ds_eq["pres"].values),
-            ffprime=_resample_to_nx(ds_eq["ffprime"].values),
-            pprime=_resample_to_nx(ds_eq["pprime"].values),
-            psi=ds_eq["psirz"].values,
-            qpsi=_resample_to_nx(ds_eq["qpsi"].values),
-            nbdry=len(ds_eq["rbbbs"]),
-            nlim=0,
-            rbdry=ds_eq["rbbbs"].values,
-            zbdry=ds_eq["zbbbs"].values,
-            rlim=[],
-            zlim=[],
-        )
-
+        eqdsk = tars_slice_to_eqdsk(ds_eq)
         return eqdsk
 
     class TestDetectCocos:
@@ -320,13 +269,13 @@ class TestCocos:
             ds = xr.open_dataset(ds_input_path, engine="h5netcdf")
 
             # drop timeslices with no valid equilibrium data
-            valid_times = ds["psirz"].notnull().any(dim=["r_idx", "z_idx"])
+            valid_times = ds["psirz"].notnull().any(dim=["r_grid", "z_grid"])
             ds = ds.sel(time_idx=valid_times)
 
             prev_cocos = None
             for time_idx in ds.time_idx:
                 ds_eq = ds.sel(time_idx=time_idx)
-                eqdsk = TestCocos.xr_to_eqdsk(ds_eq)
+                eqdsk = tars_slice_to_eqdsk(ds_eq)
                 cocos = detect_cocos(eqdsk)
                 if cocos is None:
                     continue  # skip timeslices where COCOS cannot be determined (e.g. due to bad data or indeterminate cases)
