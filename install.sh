@@ -15,7 +15,7 @@ set -e
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OFT_DIR="${SCRIPT_DIR}/submodules/OpenFUSIONToolkit"
-OFT_VERSION="v1.0.0-beta6"
+OFT_VERSION="v26.9"
 
 # Colors
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -73,35 +73,46 @@ header "Installing OpenFUSIONToolkit"
 if [ -d "$OFT_DIR/bin" ] && ls "$OFT_DIR/bin"/*.so &>/dev/null; then
     success "Already installed at $OFT_DIR"
 else
-    # Detect platform
-    PLATFORM="Ubuntu_22_04-GNU-x86_64"
-    if [ -f /etc/os-release ]; then
-        . /etc/os-release
-        [[ "$ID" =~ ^(centos|rhel|rocky)$ ]] && PLATFORM="Centos_7-GNU-x86_64"
-    fi
+    # Detect platform (release tarballs are named by architecture)
+    ARCH="$(uname -m)"
+    case "$ARCH" in
+        x86_64|aarch64) PLATFORM="Linux-GNU-${ARCH}" ;;
+        *) error "Unsupported architecture: $ARCH (expected x86_64 or aarch64)" ;;
+    esac
     
     info "Downloading OFT $OFT_VERSION ($PLATFORM)..."
     TARBALL="OpenFUSIONToolkit_${OFT_VERSION}-${PLATFORM}.tar.gz"
     URL="https://github.com/OpenFUSIONToolkit/OpenFUSIONToolkit/releases/download/${OFT_VERSION}/${TARBALL}"
     
-    # Expected SHA256 checksums for v1.0.0-beta6
-    # TODO: Replace placeholder values with actual SHA256 checksums from official release
-    # To generate checksums: sha256sum OpenFUSIONToolkit_*.tar.gz
+    # Expected SHA256 checksums for v26.9 release tarballs
+    # To regenerate: sha256sum OpenFUSIONToolkit_*.tar.gz
     declare -A CHECKSUMS=(
-        ["OpenFUSIONToolkit_v1.0.0-beta6-Ubuntu_22_04-GNU-x86_64.tar.gz"]="a4242d9a809d052e7241e351b0462dbc57e55a3caa4daa2407faa09126dc6f56"
-        ["OpenFUSIONToolkit_v1.0.0-beta6-Centos_7-GNU-x86_64.tar.gz"]="0f1fadb215d2bb15aeb2d8c68e5c03f8dc33061739d75e2facd057d56bda150d"
+        ["OpenFUSIONToolkit_v26.9-Linux-GNU-x86_64.tar.gz"]="fef55016704e5921ef9fbb89b5a1fe33b6d1f12471f94cbc9d73034e7d3a523a"
+        ["OpenFUSIONToolkit_v26.9-Linux-GNU-aarch64.tar.gz"]="aa1cc489aff81bf4b02a60b1c3e531eff5a9a9e62bb44f43fd0ac96de20f876f"
     )
     
     TEMP_DIR=$(mktemp -d)
     trap "rm -rf $TEMP_DIR" EXIT
     
-    curl -L -o "$TEMP_DIR/$TARBALL" "$URL" || wget -O "$TEMP_DIR/$TARBALL" "$URL"
+    # -f makes HTTP errors a real failure instead of saving the error page as the
+    # tarball. Concurrent CI jobs can get throttled by GitHub, so retry with backoff.
+    curl -fL --retry 5 --retry-delay 5 --retry-all-errors \
+         -o "$TEMP_DIR/$TARBALL" "$URL" \
+        || wget --tries=5 --waitretry=5 -O "$TEMP_DIR/$TARBALL" "$URL" \
+        || error "Download failed: $URL"
+
+    # A throttled or redirected response can still land as a tiny file
+    DOWNLOAD_BYTES=$(stat -c %s "$TEMP_DIR/$TARBALL" 2>/dev/null || echo 0)
+    if [ "$DOWNLOAD_BYTES" -lt 1000000 ]; then
+        error "Download is only ${DOWNLOAD_BYTES} bytes, expected ~90 MB. GitHub likely rate-limited this request."
+    fi
     
     # Verify checksum if available
     if [ -n "${CHECKSUMS[$TARBALL]}" ]; then
         info "Verifying checksum..."
         if command -v sha256sum &>/dev/null; then
-            echo "${CHECKSUMS[$TARBALL]}  $TEMP_DIR/$TARBALL" | sha256sum -c - || error "Checksum verification failed!"
+            echo "${CHECKSUMS[$TARBALL]}  $TEMP_DIR/$TARBALL" | sha256sum -c - \
+                || error "Checksum mismatch for $TARBALL - the download is corrupt or the release asset changed."
             success "Checksum verified"
         else
             warn "sha256sum not available, skipping checksum verification"
@@ -123,22 +134,6 @@ else
     mkdir -p "${SCRIPT_DIR}/submodules"
     rm -rf "$OFT_DIR"
     mv "$EXTRACTED" "$OFT_DIR"
-    
-    # Ensure pyproject.toml exists for Python bindings
-    [ ! -f "$OFT_DIR/python/pyproject.toml" ] && cat > "$OFT_DIR/python/pyproject.toml" << 'EOF'
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "openfusiontoolkit"
-version = "1.0.0b6"
-requires-python = ">=3.9"
-dependencies = []
-
-[tool.setuptools]
-packages = ["OpenFUSIONToolkit"]
-EOF
     
     trap - EXIT
     rm -rf "$TEMP_DIR"

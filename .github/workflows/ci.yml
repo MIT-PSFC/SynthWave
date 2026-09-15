@@ -6,18 +6,37 @@ on:
   pull_request:
 
 jobs:
-  lint:
+  # Warms the OFT cache once. Without this every job below misses the same cache
+  # key at the same time and GitHub throttles the parallel 90 MB downloads.
+  setup-oft:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
 
       - name: Cache OFT
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: submodules/OpenFUSIONToolkit
           key: oft-v1.0.0-beta6-ubuntu-22.04
+
+      - name: Install
+        run: ./install.sh
+
+  lint:
+    needs: setup-oft
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Cache OFT
+        uses: actions/cache@v5
+        with:
+          path: submodules/OpenFUSIONToolkit
+          key: oft-v26.9-ubuntu-22.04
 
       - name: Install
         run: ./install.sh
@@ -32,6 +51,7 @@ jobs:
         run: uv run isort synthwave/
 
   test:
+    needs: setup-oft
     runs-on: ubuntu-22.04
     strategy:
       matrix:
@@ -41,15 +61,15 @@ jobs:
           - test_filaments.py
     name: test (${{ matrix.test-file }})
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
 
       - name: Cache OFT
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: submodules/OpenFUSIONToolkit
-          key: oft-v1.0.0-beta6-ubuntu-22.04
+          key: oft-v26.9-ubuntu-22.04
 
       - name: Install
         run: ./install.sh
@@ -58,18 +78,19 @@ jobs:
         run: uv run pytest synthwave/tests/${{ matrix.test-file }}
 
   test-thincurr-other:
+    needs: setup-oft
     runs-on: ubuntu-22.04
     name: test (test_thincurr.py - other)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
 
       - name: Cache OFT
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: submodules/OpenFUSIONToolkit
-          key: oft-v1.0.0-beta6-ubuntu-22.04
+          key: oft-v26.9-ubuntu-22.04
 
       - name: Install
         run: ./install.sh
@@ -78,21 +99,22 @@ jobs:
         run: uv run pytest synthwave/tests/test_thincurr.py --deselect synthwave/tests/test_thincurr.py::test_toroidal_angles
 
   test-thincurr-toroidal-angles:
+    needs: setup-oft
     runs-on: ubuntu-22.04
     strategy:
       matrix:
         mode: ["m2n1", "m3n2", "m-3n2", "m3n1", "m4n3"]
     name: test (test_toroidal_angles[${{ matrix.mode }}])
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
 
       - name: Cache OFT
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: submodules/OpenFUSIONToolkit
-          key: oft-v1.0.0-beta6-ubuntu-22.04
+          key: oft-v26.9-ubuntu-22.04
 
       - name: Install
         run: ./install.sh
@@ -101,17 +123,18 @@ jobs:
         run: uv run pytest "synthwave/tests/test_thincurr.py::test_toroidal_angles[${{ matrix.mode }}]"
 
   notebooks:
+    needs: setup-oft
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
 
       - name: Cache OFT
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: submodules/OpenFUSIONToolkit
-          key: oft-v1.0.0-beta6-ubuntu-22.04
+          key: oft-v26.9-ubuntu-22.04
 
       - name: Install
         run: ./install.sh
