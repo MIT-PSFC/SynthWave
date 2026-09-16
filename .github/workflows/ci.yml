@@ -17,7 +17,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: submodules/OpenFUSIONToolkit
-          key: oft-v1.0.0-beta6-ubuntu-22.04
+          key: oft-v26.9-ubuntu-22.04
 
       - name: Install
         run: ./install.sh
@@ -49,7 +49,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: submodules/OpenFUSIONToolkit
-          key: oft-v1.0.0-beta6-ubuntu-22.04
+          key: oft-v26.9-ubuntu-22.04
 
       - name: Install
         run: ./install.sh
@@ -69,7 +69,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: submodules/OpenFUSIONToolkit
-          key: oft-v1.0.0-beta6-ubuntu-22.04
+          key: oft-v26.9-ubuntu-22.04
 
       - name: Install
         run: ./install.sh
@@ -92,7 +92,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: submodules/OpenFUSIONToolkit
-          key: oft-v1.0.0-beta6-ubuntu-22.04
+          key: oft-v26.9-ubuntu-22.04
 
       - name: Install
         run: ./install.sh
@@ -111,7 +111,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: submodules/OpenFUSIONToolkit
-          key: oft-v1.0.0-beta6-ubuntu-22.04
+          key: oft-v26.9-ubuntu-22.04
 
       - name: Install
         run: ./install.sh

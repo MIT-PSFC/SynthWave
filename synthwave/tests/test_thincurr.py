@@ -5,7 +5,6 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import pytest
 import xarray as xr
-from OpenFUSIONToolkit import OFT_env
 from sympy import nextprime
 
 from synthwave import PACKAGE_ROOT
@@ -19,9 +18,9 @@ from synthwave.mirnov.prep_thincurr_input import (
     gen_OFT_filament_and_eta_file,
     gen_OFT_sensors_file,
 )
-from synthwave.mirnov.run_thincurr_model import (
-    calc_direct_response,
-    calc_frequency_response,
+from synthwave.mirnov.synthetic_signal import (
+    direct_response_thincurr,
+    frequency_response_thincurr,
 )
 
 # All tests in this file use the OpenFUSIONToolkit C++ library which has
@@ -29,13 +28,6 @@ from synthwave.mirnov.run_thincurr_model import (
 # workers.  Mark the entire module serial so the conftest fixture forces
 # sequential execution and GC cleanup between tests.
 pytestmark = pytest.mark.serial
-
-
-# Fixture for oft environment so only one is created for all tests
-@pytest.fixture(scope="session")
-def oft_env_fixture():
-    oft_env = OFT_env(nthreads=2)
-    return oft_env
 
 
 @pytest.mark.parametrize(
@@ -49,11 +41,13 @@ def oft_env_fixture():
     ],
     ids=["m2n1", "m3n2", "m-3n2", "m3n1", "m4n3"],
 )
-def test_toroidal_angles(mode, oft_env_fixture):
+def test_toroidal_angles(mode, oft_env):
     tolerance_tight = np.deg2rad(1)
     tolerance_loose = np.deg2rad(
         5
     )  # Any more than this and I fear spectral analysis will struggle
+    # HODLR compression of the vessel inductance matrix breaks the exact symmetry of the total response
+    tolerance_vessel_symmetry = np.deg2rad(2)
 
     major_radius = 1
     minor_radius_vessel = 0.35
@@ -147,8 +141,7 @@ def test_toroidal_angles(mode, oft_env_fixture):
 
     with tempfile.TemporaryDirectory() as working_directory:
         toroidal_tracer = ToroidalFilamentTracer(
-            mode["m"],
-            mode["n"],
+            (mode["m"], mode["n"]),
             major_radius,
             0,
             minor_radius_plasma,
@@ -171,8 +164,8 @@ def test_toroidal_angles(mode, oft_env_fixture):
             working_directory=working_directory,
         )
 
-        total_response, direct_response, _vessel_response = calc_frequency_response(
-            oft_env=oft_env_fixture,
+        total_response, direct_response, _vessel_response = frequency_response_thincurr(
+            oft_env=oft_env,
             tracer=toroidal_tracer,
             freq=10e3,
             mesh_file=torus_mesh_file,
@@ -241,7 +234,7 @@ def test_toroidal_angles(mode, oft_env_fixture):
     assert np.isclose(
         wrapped_diff(total_measured_phase_diff_ac, total_measured_phase_diff_bd),
         0,
-        atol=tolerance_tight,
+        atol=tolerance_vessel_symmetry,
     ), (
         "The poloidal phase difference for the total response between sensors A and C should roughly match that between sensors B and D"
     )
@@ -318,8 +311,8 @@ def test_gen_OFT_sensors_file():
         assert len(content) > 0
 
 
-def test_calc_direct_response_matches_frequency_response(oft_env_fixture):
-    """calc_direct_response must return the same direct component as calc_frequency_response."""
+def test_direct_response_thincurr_matches_frequency_response(oft_env):
+    """direct_response_thincurr must return the same direct component as frequency_response_thincurr."""
 
     major_radius = 1
     minor_radius_vessel = 0.35
@@ -350,8 +343,7 @@ def test_calc_direct_response_matches_frequency_response(oft_env_fixture):
     )
 
     toroidal_tracer = ToroidalFilamentTracer(
-        mode["m"],
-        mode["n"],
+        (mode["m"], mode["n"]),
         major_radius,
         0.0,
         minor_radius_plasma,
@@ -372,21 +364,21 @@ def test_calc_direct_response_matches_frequency_response(oft_env_fixture):
         filament_list, current_list = toroidal_tracer.get_filament_list(
             num_filaments=num_filaments
         )
-        gen_OFT_filament_and_eta_file(
-            working_directory, filament_list, [1e-6] * len(filament_list)
+        gen_OFT_filament_and_eta_file(working_directory, filament_list, [1e-6])
+
+        total_response, direct_response_freq, vessel_response = (
+            frequency_response_thincurr(
+                oft_env=oft_env,
+                tracer=toroidal_tracer,
+                freq=10e3,
+                mesh_file=torus_mesh_file,
+                working_directory=working_directory,
+                sensor_file_path=sensor_file_path,
+            )
         )
 
-        total_response, direct_response_freq, vessel_response = calc_frequency_response(
-            oft_env=oft_env_fixture,
-            tracer=toroidal_tracer,
-            freq=10e3,
-            mesh_file=torus_mesh_file,
-            working_directory=working_directory,
-            sensor_file_path=sensor_file_path,
-        )
-
-        direct_response_only = calc_direct_response(
-            oft_env=oft_env_fixture,
+        direct_response_only = direct_response_thincurr(
+            oft_env=oft_env,
             tracer=toroidal_tracer,
             mesh_file=torus_mesh_file,
             sensor_details=sensor_details,
@@ -406,5 +398,5 @@ def test_calc_direct_response_matches_frequency_response(oft_env_fixture):
         direct_from_direct,
         direct_from_freq,
         rtol=1e-6,
-        err_msg="calc_direct_response must match the direct component of calc_frequency_response",
+        err_msg="direct_response_thincurr must match the direct component of frequency_response_thincurr",
     )
