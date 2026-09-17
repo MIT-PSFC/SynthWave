@@ -30,6 +30,9 @@ def filament_flux_matrix(
     so the (n_sensors, n_segments) work arrays stay below max_block_elements each,
     which keeps them in cache.
 
+    This optimal block size is hardware-dependent, but doesn't appear to be too sensitive.
+    As long as it's in the 2**14 - 2**20 range the performance is good.
+
     The direct response of any current pattern on these filaments is current_list @ flux,
     so modes sharing a filament set (harmonics on one rational surface) share this matrix.
 
