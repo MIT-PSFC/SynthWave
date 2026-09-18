@@ -6,18 +6,11 @@ Originally developed by Rian Chandra [here](https://github.com/chandrarn/Synthet
 
 ## Installation Instructions
 
-1. Run `./install.sh` and everything should install
+1. Run `./install.sh` and everything should install.
 
-This will create a local version of OpenFUSIONToolkit and make a uv-managed virtual environment.
+This creates a uv-managed virtual environment and installs OpenFUSIONToolkit from PyPI via the `openfusiontoolkit` package. The Python import name remains `OpenFUSIONToolkit`.
 
-2. (Optional) if you want to get proper highlighting in VSCode, add this to `.vscode/settings.json`:
-```json
-{
-    "python.analysis.extraPaths": [
-        "${workspaceFolder}/submodules/OpenFUSIONToolkit/python"
-    ],
-}
-```
+Alternatively, run `uv sync --dev` directly.
    
 ## Operation Instructions
 

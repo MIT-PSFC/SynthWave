@@ -3,7 +3,7 @@ from freeqdsk.geqdsk import GEQDSKFile
 from loguru import logger
 from scipy.constants import mu_0
 from scipy.interpolate import RectBivariateSpline, make_smoothing_spline
-from scipy.optimize import newton
+from scipy.optimize import newton, root_scalar
 
 from synthwave.magnetic_geometry.utils import (
     cartesian_to_cylindrical,
@@ -162,7 +162,93 @@ def detect_cocos(eqdsk: GEQDSKFile, sign_RphiZ: int | None = 1) -> int | None:
 
         return 0 if alpha < 2 * np.pi else 1
 
-    e_Bp = _e_Bp(eqdsk)
+    def _e_Bp_new(eqdsk):
+        # Detect e_Bp via Grad-Shafranov residual.
+        # The GS equation for psi in Wb/rad (e_Bp=0) is:
+        #   Delta*(psi) = -(mu_0*R^2*pprime + ffprime)
+        # If psi is in Weber (e_Bp=1) the same stored pprime/ffprime satisfy:
+        #   Delta*(psi) = -(2*pi)^2 * (mu_0*R^2*pprime + ffprime)
+        # Fit alpha such that lhs = alpha * rhs_ebp0: alpha~1 -> e_Bp=0, alpha~(2*pi)^2 -> e_Bp=1.
+
+        # 1. Set up the exact coordinate vectors and grids
+        R_1d = np.array(eqdsk.r_grid[:, 0], dtype=float)
+        Z_1d = np.array(eqdsk.z_grid[0, :], dtype=float)
+
+        # Build 2D meshgrids for direct spline evaluation
+        R_2d, Z_2d = np.meshgrid(R_1d, Z_1d, indexing="ij")
+
+        psi_2d = np.array(eqdsk.psi, dtype=float)
+        if psi_2d.shape == (len(Z_1d), len(R_1d)):
+            psi_2d = psi_2d.T  # Ensure shape is (nR, nZ) to match Spline indexing
+
+        # Reconstruct the exact 2D spline of psi for analytic differentiation
+        psi_spline = RectBivariateSpline(R_1d, Z_1d, psi_2d, kx=3, ky=3, s=0)
+
+        # 2. Evaluate LHS of the Grad-Shafranov Equation analytically via Spline
+        # Delta*(psi) = d2psi/dR2 - (1/R)*dpsi/dR + d2psi/dZ2
+        d2psi_dR2 = psi_spline.ev(R_2d, Z_2d, dx=2, dy=0)
+        dpsi_dR = psi_spline.ev(R_2d, Z_2d, dx=1, dy=0)
+        d2psi_dZ2 = psi_spline.ev(R_2d, Z_2d, dx=0, dy=2)
+
+        lhs_gs = d2psi_dR2 - (dpsi_dR / R_2d) + d2psi_dZ2
+
+        # 3. Map 1D profiles over the raw, physical linear Psi grid
+        pprime_raw = np.array(eqdsk.pprime, dtype=float)
+        ffprime_raw = np.array(eqdsk.ffprime, dtype=float)
+
+        simagx = float(eqdsk.simagx)
+        sibdry = float(eqdsk.sibdry)
+
+        psi_1d_mesh = np.linspace(simagx, sibdry, len(pprime_raw))
+
+        # Interpolate 1D profiles directly to the 2D raw psi map
+        pprime_2d = np.interp(psi_2d, psi_1d_mesh, pprime_raw)
+        ffprime_2d = np.interp(psi_2d, psi_1d_mesh, ffprime_raw)
+
+        # Calculate the RHS assuming e_Bp = 0
+        rhs_gs = -(mu_0 * R_2d**2 * pprime_2d + ffprime_2d)
+
+        # 4. Calculate Normalized Psi to isolate the core plasma region
+        # Axis = 0.0, LCFS Boundary = 1.0
+        psi_norm_2d = (psi_2d - simagx) / (sibdry - simagx)
+
+        # Flatten arrays for regression
+        lhs_flat = lhs_gs.ravel()
+        rhs_flat = rhs_gs.ravel()
+        psi_norm_flat = psi_norm_2d.ravel()
+
+        rhs_max = np.max(np.abs(rhs_flat))
+        if rhs_max == 0:
+            return 0
+
+        # Physical Mask: Only include points well inside the plasma core
+        # We cut off at psi_norm = 0.95 to stay clear of the boundary pedestal
+        # and X-point numerical artifacts where the spline gradients can get noisy.
+        plasma_core_mask = (psi_norm_flat >= 0.0) & (psi_norm_flat <= 0.95)
+
+        # Signal Noise Mask: Ignore regions where RHS is fundamentally zero
+        signal_mask = np.abs(rhs_flat) > 0.05 * rhs_max
+
+        # Combined clean mask
+        final_mask = plasma_core_mask & signal_mask
+
+        lhs_valid = lhs_flat[final_mask]
+        rhs_valid = rhs_flat[final_mask]
+
+        # Global linear regression: alpha = sum(LHS * RHS) / sum(RHS^2)
+        alpha = np.dot(lhs_valid, rhs_valid) / np.dot(rhs_valid, rhs_valid)
+
+        logger.debug(
+            f"Detected Grad-Shafranov scaling alpha factor (Core Plasma Only): {alpha:.4f}"
+        )
+
+        # Distinguish e_Bp = 0 (alpha ~ 1) from e_Bp = 1 (alpha ~ 39.4) using geometric mean (2*pi)
+        e_Bp = 0 if alpha < 2 * np.pi else 1
+
+        return e_Bp
+
+    # e_Bp = _e_Bp(eqdsk)
+    e_Bp = _e_Bp_new(eqdsk)
 
     # From Sauter Table I: sign(q) = sign_rhotp * sign(Ip * B0), so
     # sign_rhotp = sign(q) * sign(Ip) * sign(B0)
@@ -390,7 +476,7 @@ class EquilibriumField:
 
         return np.array([Br, Bt, Bz])
 
-    def get_psi_of_q(self, q):
+    def get_psi_of_q_old(self, q):
         """Get psi corresponding to a given q. Works in |q| space."""
         q_abs = np.abs(q)
         qpsi_grid = self.qpsi_abs(self.psi_grid)
@@ -406,6 +492,95 @@ class EquilibriumField:
         # psi
         psi = self.core_psi_consistency_check(qpsi_grid, psi, q_abs)
 
+        return psi
+
+    def get_psi_of_q_raw(self, q):
+        # Simple interpolation of raw |q|-psi grid to get an initial guess for psi(q)
+        # For "regular" q-profiles, this is usually sufficient.
+        q_abs = np.abs(q)
+        qpsi_raw = np.abs(np.array(self.eqdsk.qpsi, dtype=float))
+        psi_raw = np.array(self.psi_grid, dtype=float)
+        if not (np.all(np.diff(qpsi_raw) >= 0) or np.all(np.diff(qpsi_raw) <= 0)):
+            raise ValueError(
+                "Raw abs(qpsi) profile is not monotonic and cannot be inverted safely"
+            )
+
+        if q_abs < qpsi_raw.min() or q_abs > qpsi_raw.max():
+            raise ValueError(
+                "Requested abs(q) is outside the raw abs(qpsi) range: %s not in [%s, %s]"
+                % (q_abs, qpsi_raw.min(), qpsi_raw.max())
+            )
+
+        return float(np.interp(q_abs, qpsi_raw, psi_raw))
+
+    def get_psi_of_q(self, q):
+        """
+        Get psi corresponding to a given |q|
+        Slightly improved to try and use a bounded solver if possible,
+        otherwise fall back to unbounded Newton's method
+        The advantages of this is that it can circumvent some unusual, high m/n
+        cases where the solver can get stuck near x-points, and non-monotonic
+        q-profiles (based on DIII-D tests)
+
+        """
+        q_abs = np.abs(q)
+
+        # Make an initial guess based on the smoothed |q|-psi grid.
+        qpsi_grid = self.qpsi_abs(self.psi_grid)
+        psi_guess_index = np.argmin(np.abs(qpsi_grid - q_abs))
+        psi_guess = self.psi_grid[psi_guess_index]
+
+        q_at_guess = float(self.qpsi_abs(psi_guess))
+        if np.isclose(q_at_guess, q_abs, atol=1e-12):
+            psi = psi_guess
+        else:
+            # Check if initial guess is within bounds of Psi
+            if psi_guess_index == 0 or psi_guess_index == len(self.psi_grid) - 1:
+                raise ValueError(
+                    "Initial guess for psi is out of bounds. Requested abs(q)=%1.3f is outside the gEQDSK range (q_min = %1.3f, q_max = %1.3f)."
+                    % (q_abs, qpsi_grid.min(), qpsi_grid.max())
+                )
+
+            # Bound possible psi values around initial guess from psi grid
+            psi_lo = (
+                self.psi_grid[psi_guess_index - 5]
+                if psi_guess_index - 5 >= 0
+                else self.psi_grid[0]
+            )
+            psi_hi = (
+                self.psi_grid[psi_guess_index + 10]
+                if psi_guess_index + 10 < len(self.psi_grid)
+                else self.psi_grid[-1]
+            )
+
+            a = min(psi_lo, psi_hi)
+            b = max(psi_lo, psi_hi)
+
+            def fn_psi(psi):
+                return self.qpsi_abs(psi) - q_abs
+
+            # Use a bounded solver if possible, otherwise fall back to unbounded Newton's method
+            bracket_found = np.sign(fn_psi(a)) != np.sign(fn_psi(b))
+            if bracket_found:
+                result = root_scalar(
+                    fn_psi,
+                    bracket=[a, b],
+                    method="toms748",
+                    xtol=1e-10,
+                    maxiter=200,
+                )
+                psi = float(result.root)
+            else:
+                psi = newton(
+                    func=lambda psi: np.abs(self.qpsi_abs(psi) - q_abs),
+                    x0=psi_guess,
+                    fprime=lambda psi: self.qpsi_abs.derivative(1)(psi),
+                    maxiter=800,
+                    tol=1e-10,
+                )
+
+        # Ensure that the final psi value is consistent with the |qpsi| grid
+        psi = self.core_psi_consistency_check(qpsi_grid, psi, q_abs)
         return psi
 
     def core_psi_consistency_check(self, qpsi_grid, psi, q):

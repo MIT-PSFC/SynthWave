@@ -211,7 +211,6 @@ __marimo__/
 CLAUDE.md
 
 # Install
-submodules/OpenFUSIONToolkit
 setup_env.sh
 
 # Tests

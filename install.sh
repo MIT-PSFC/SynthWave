@@ -2,11 +2,11 @@
 #
 # SynthWave Installation Script
 # ========================
-# Installs SynthWave and dependencies. No sudo required.
+# Installs SynthWave and Python dependencies. No sudo required.
 #
 # Usage:
-#   ./install.sh                    # Interactive install
-#   ./install.sh --clean            # Clean previous installation
+#   ./install.sh                    # Install dependencies
+#   ./install.sh --clean            # Clean previous installation first
 #   ./install.sh --help             # Show help
 #
 
@@ -14,8 +14,6 @@ set -e
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-OFT_DIR="${SCRIPT_DIR}/submodules/OpenFUSIONToolkit"
-OFT_VERSION="v26.9"
 
 # Colors
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -31,7 +29,7 @@ CLEAN=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --clean)         CLEAN=true; shift ;;
+        --clean) CLEAN=true; shift ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -44,12 +42,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+cd "$SCRIPT_DIR"
+
 # Clean if requested
 if $CLEAN; then
     header "Cleaning previous installation"
-    rm -rf "$OFT_DIR" .venv .env 2>/dev/null || true
-    # Force remove if still exists
-    [ -d "$OFT_DIR" ] && chmod -R u+w "$OFT_DIR" 2>/dev/null && rm -rf "$OFT_DIR"
+    rm -rf .venv .env setup_env.sh submodules/OpenFUSIONToolkit 2>/dev/null || true
     success "Clean complete"
 fi
 
@@ -62,156 +60,24 @@ if ! command -v uv &>/dev/null; then
 fi
 success "uv $(uv --version 2>/dev/null | awk '{print $2}')"
 
-# Initialize submodules
-header "Initializing submodules"
-cd "$SCRIPT_DIR"
-git submodule update --init --recursive
-success "Submodules ready"
-
-# Install OpenFUSIONToolkit
-header "Installing OpenFUSIONToolkit"
-if [ -d "$OFT_DIR/bin" ] && ls "$OFT_DIR/bin"/*.so &>/dev/null; then
-    success "Already installed at $OFT_DIR"
-else
-    # Detect platform (release tarballs are named by architecture)
-    ARCH="$(uname -m)"
-    case "$ARCH" in
-        x86_64|aarch64) PLATFORM="Linux-GNU-${ARCH}" ;;
-        *) error "Unsupported architecture: $ARCH (expected x86_64 or aarch64)" ;;
-    esac
-    
-    info "Downloading OFT $OFT_VERSION ($PLATFORM)..."
-    TARBALL="OpenFUSIONToolkit_${OFT_VERSION}-${PLATFORM}.tar.gz"
-    URL="https://github.com/OpenFUSIONToolkit/OpenFUSIONToolkit/releases/download/${OFT_VERSION}/${TARBALL}"
-    
-    # Expected SHA256 checksums for v26.9 release tarballs
-    # To regenerate: sha256sum OpenFUSIONToolkit_*.tar.gz
-    declare -A CHECKSUMS=(
-        ["OpenFUSIONToolkit_v26.9-Linux-GNU-x86_64.tar.gz"]="fef55016704e5921ef9fbb89b5a1fe33b6d1f12471f94cbc9d73034e7d3a523a"
-        ["OpenFUSIONToolkit_v26.9-Linux-GNU-aarch64.tar.gz"]="aa1cc489aff81bf4b02a60b1c3e531eff5a9a9e62bb44f43fd0ac96de20f876f"
-    )
-    
-    TEMP_DIR=$(mktemp -d)
-    trap "rm -rf $TEMP_DIR" EXIT
-    
-    # -f makes HTTP errors a real failure instead of saving the error page as the
-    # tarball. Concurrent CI jobs can get throttled by GitHub, so retry with backoff.
-    curl -fL --retry 5 --retry-delay 5 --retry-all-errors \
-         -o "$TEMP_DIR/$TARBALL" "$URL" \
-        || wget --tries=5 --waitretry=5 -O "$TEMP_DIR/$TARBALL" "$URL" \
-        || error "Download failed: $URL"
-
-    # A throttled or redirected response can still land as a tiny file
-    DOWNLOAD_BYTES=$(stat -c %s "$TEMP_DIR/$TARBALL" 2>/dev/null || echo 0)
-    if [ "$DOWNLOAD_BYTES" -lt 1000000 ]; then
-        error "Download is only ${DOWNLOAD_BYTES} bytes, expected ~90 MB. GitHub likely rate-limited this request."
-    fi
-    
-    # Verify checksum if available
-    if [ -n "${CHECKSUMS[$TARBALL]}" ]; then
-        info "Verifying checksum..."
-        if command -v sha256sum &>/dev/null; then
-            echo "${CHECKSUMS[$TARBALL]}  $TEMP_DIR/$TARBALL" | sha256sum -c - \
-                || error "Checksum mismatch for $TARBALL - the download is corrupt or the release asset changed."
-            success "Checksum verified"
-        else
-            warn "sha256sum not available, skipping checksum verification"
-        fi
-    else
-        warn "No checksum configured for $TARBALL - proceeding without verification"
-        warn "To improve security, add SHA256 checksums to the CHECKSUMS array in this script"
-    fi
-    
-    info "Extracting..."
-    tar -xzf "$TEMP_DIR/$TARBALL" -C "$TEMP_DIR"
-    
-    # Find the extracted directory
-    EXTRACTED=$(find "$TEMP_DIR" -maxdepth 1 -type d -name "OpenFUSIONToolkit_*" | head -1)
-    if [ -z "$EXTRACTED" ]; then
-        error "Failed to find extracted OpenFUSIONToolkit directory"
-    fi
-    
-    mkdir -p "${SCRIPT_DIR}/submodules"
-    rm -rf "$OFT_DIR"
-    mv "$EXTRACTED" "$OFT_DIR"
-    
-    trap - EXIT
-    rm -rf "$TEMP_DIR"
-    success "Installed to $OFT_DIR"
-fi
-
-# Create .env file for uv
-header "Creating environment files"
-
-# Detect HDF5 library path (needed for OpenFUSIONToolkit)
-HDF5_LIB_PATH=""
-if [ -n "${LD_LIBRARY_PATH:-}" ]; then
-    # Check if HDF5 is already in LD_LIBRARY_PATH (from module)
-    for path in $(echo "$LD_LIBRARY_PATH" | tr ':' '\n'); do
-        if [ -f "$path/libhdf5.so.310" ] || [ -f "$path/libhdf5.so" ]; then
-            HDF5_LIB_PATH="$path"
-            break
-        fi
-    done
-fi
-# Also check common HPC locations
-if [ -z "$HDF5_LIB_PATH" ]; then
-    for path in /orcd/software/community/001/spack/pkg/hdf5/*/lib /usr/lib64 /usr/lib; do
-        if [ -f "$path/libhdf5.so.310" ]; then
-            HDF5_LIB_PATH="$path"
-            break
-        fi
-    done 2>/dev/null
-fi
-
-if [ -n "$HDF5_LIB_PATH" ]; then
-    info "Found HDF5 at: $HDF5_LIB_PATH"
-fi
-
-# Build LD_LIBRARY_PATH with current system path
-DOTENV_LD_PATH="${OFT_DIR}/bin"
-[ -n "${LD_LIBRARY_PATH:-}" ] && DOTENV_LD_PATH="${DOTENV_LD_PATH}:${LD_LIBRARY_PATH}"
-
-cat > "${SCRIPT_DIR}/.env" << EOF
-# SynthWave environment (loaded automatically by 'uv run')
-# OpenFUSIONToolkit library path
-LD_LIBRARY_PATH=${DOTENV_LD_PATH}
-PATH=${OFT_DIR}/bin:/usr/local/bin:/usr/bin:/bin
-EOF
-
-# Add HDF5 to LD_LIBRARY_PATH if found
-if [ -n "$HDF5_LIB_PATH" ]; then
-    # Prepend HDF5 to the LD_LIBRARY_PATH line
-    sed -i "s|^LD_LIBRARY_PATH=|LD_LIBRARY_PATH=${HDF5_LIB_PATH}:|" "${SCRIPT_DIR}/.env"
-fi
-
 # Create setup_env.sh
-cat > "${SCRIPT_DIR}/setup_env.sh" << EOF
+header "Creating environment files"
+cat > "${SCRIPT_DIR}/setup_env.sh" << 'EOF'
 #!/bin/bash
 # Source this for manual Python usage: source setup_env.sh
-SYNTHWAVE_ROOT="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
-export PATH="\${SYNTHWAVE_ROOT}/submodules/OpenFUSIONToolkit/bin:\${PATH}"
-export LD_LIBRARY_PATH="\${SYNTHWAVE_ROOT}/submodules/OpenFUSIONToolkit/bin:\${LD_LIBRARY_PATH:-}"
-EOF
-
-# Add HDF5 path to setup_env.sh if found
-if [ -n "$HDF5_LIB_PATH" ]; then
-    cat >> "${SCRIPT_DIR}/setup_env.sh" << EOF
-# HDF5 library path (detected during installation)
-export LD_LIBRARY_PATH="${HDF5_LIB_PATH}:\${LD_LIBRARY_PATH}"
-EOF
+SYNTHWAVE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${SYNTHWAVE_ROOT}/.venv/bin/activate" ]; then
+    source "${SYNTHWAVE_ROOT}/.venv/bin/activate"
+else
+    echo "SynthWave virtual environment not found. Run ./install.sh or uv sync --dev first." >&2
 fi
+EOF
+chmod +x "${SCRIPT_DIR}/setup_env.sh"
+success "Created setup_env.sh"
 
 # Install Python dependencies
 header "Installing Python dependencies"
-cd "$SCRIPT_DIR"
-
-SYNC_ARGS=()
-
-# Set up environment for uv run
-export LD_LIBRARY_PATH="${OFT_DIR}/bin:${LD_LIBRARY_PATH:-}"
-
-uv sync "${SYNC_ARGS[@]}" || uv sync
+uv sync --dev
 success "Python packages installed"
 uv run pre-commit install
 
@@ -219,7 +85,7 @@ uv run pre-commit install
 header "Verifying installation"
 uv run python -c "import synthwave" && success "synthwave" || warn "synthwave failed"
 uv run python -c "from OpenFUSIONToolkit.ThinCurr.sensor import Mirnov" 2>/dev/null \
-    && success "OpenFUSIONToolkit" || warn "OpenFUSIONToolkit (may need LD_LIBRARY_PATH)"
+    && success "OpenFUSIONToolkit" || warn "OpenFUSIONToolkit import failed"
 
 # Done
 header "Installation complete!"

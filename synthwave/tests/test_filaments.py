@@ -513,8 +513,13 @@ class TestToroidalFilamentTracer:
         fig.savefig(fig_path, dpi=150)
         plt.close(fig)
 
-        # All current magnitudes must be 1 (unit phasors)
-        np.testing.assert_allclose(np.abs(currents), 1.0, rtol=1e-10)
+        # Current magnitudes are normalized from 1 A/m surface current density
+        # by the average poloidal arc spacing between filament crossings.
+        np.testing.assert_allclose(
+            np.abs(currents),
+            filament_ds.attrs["average_poloidal_arc_spacing"],
+            rtol=1e-10,
+        )
 
         # Adjacent filaments must have equal phase steps of 2*pi*n/num_filaments
         # Wrap expected to (-pi, pi] to match np.angle output range
@@ -525,6 +530,49 @@ class TestToroidalFilamentTracer:
         np.testing.assert_allclose(
             measured_phase_steps, expected_phase_step, atol=1e-10
         )
+
+    def test_normalized_surface_current_density(self):
+        """Toroidal current magnitudes scale with analytic poloidal arc spacing."""
+        major_radius = 1.0
+        minor_radius = 0.3
+        num_filaments = 6
+        tracer = ToroidalFilamentTracer(
+            (1, 1),
+            R0=major_radius,
+            Z0=0.0,
+            a=minor_radius,
+            base_num_points=361,
+            scale_points=False,
+            prevent_synthetic_structure=False,
+            sign_Ip=1,
+            sign_B0=1,
+        )
+
+        filament_ds = tracer.get_filament_ds(
+            num_filaments=num_filaments, coordinate_system="cylindrical"
+        )
+        expected_spacing = 2 * np.pi * minor_radius / num_filaments
+
+        np.testing.assert_allclose(
+            filament_ds.attrs["average_poloidal_arc_spacing"],
+            expected_spacing,
+            rtol=1e-3,
+        )
+        np.testing.assert_allclose(
+            filament_ds.attrs["poloidal_arc_spacing_distances"],
+            expected_spacing,
+            rtol=1e-3,
+        )
+        np.testing.assert_allclose(
+            np.abs(filament_ds["current"].values), expected_spacing, rtol=1e-3
+        )
+        assert (
+            filament_ds.attrs["poloidal_arc_spacing_metric"]
+            == "arc_length_between_phi0_crossings"
+        )
+        assert filament_ds.attrs["current_units"] == "A"
+        assert filament_ds.attrs["current_density_units"] == "A/m"
+        assert "current_density [1 A/m]" in filament_ds.attrs["current_normalization"]
 
     @pytest.mark.parametrize(
         "mode",
@@ -609,8 +657,13 @@ class TestToroidalFilamentTracer:
         fig.savefig(fig_path, dpi=150)
         plt.close(fig)
 
-        # All current magnitudes must be 1 (unit phasors)
-        np.testing.assert_allclose(np.abs(currents), 1.0, rtol=1e-10)
+        # Current magnitudes are normalized from 1 A/m surface current density
+        # by the average poloidal arc spacing between filament crossings.
+        np.testing.assert_allclose(
+            np.abs(currents),
+            filament_ds.attrs["average_poloidal_arc_spacing"],
+            rtol=1e-10,
+        )
 
         # Dataset shape must match num_filaments x num_points
         assert filament_ds["x"].shape == (num_filaments, toroidal_tracer.num_points)
@@ -884,8 +937,13 @@ class TestEquilibriumFilamentTracer:
         fig.savefig(fig_path, dpi=150)
         plt.close(fig)
 
-        # All current magnitudes must be 1 (unit phasors)
-        np.testing.assert_allclose(np.abs(currents), 1.0, rtol=1e-10)
+        # Current magnitudes are normalized from 1 A/m surface current density
+        # by the average poloidal arc spacing between filament crossings.
+        np.testing.assert_allclose(
+            np.abs(currents),
+            filament_ds.attrs["average_poloidal_arc_spacing"],
+            rtol=1e-10,
+        )
 
         # Adjacent filaments must have equal phase steps of 2*pi*n/num_filaments
         # Wrap expected to (-pi, pi] to match np.angle output range
@@ -973,8 +1031,13 @@ class TestEquilibriumFilamentTracer:
             f"Saved 3D equilibrium filament trace plot for mode m={mode['m']}, n={mode['n']} to {fig_path}"
         )
 
-        # All current magnitudes must be 1 (unit phasors)
-        np.testing.assert_allclose(np.abs(currents), 1.0, rtol=1e-10)
+        # Current magnitudes are normalized from 1 A/m surface current density
+        # by the average poloidal arc spacing between filament crossings.
+        np.testing.assert_allclose(
+            np.abs(currents),
+            filament_ds.attrs["average_poloidal_arc_spacing"],
+            rtol=1e-10,
+        )
 
         # Dataset shape must match num_filaments x num_points
         assert filament_ds["x"].shape == (num_filaments, equilibrium_tracer.num_points)
@@ -1210,8 +1273,10 @@ class TestNegativeNFilament:
         neg_ds = neg_tracer.get_filament_ds(num_filaments=num_filaments)
 
         np.testing.assert_allclose(
-            neg_ds["current"].values,
-            np.conj(pos_ds["current"].values),
+            neg_ds["current"].values / neg_ds.attrs["average_poloidal_arc_spacing"],
+            np.conj(
+                pos_ds["current"].values / pos_ds.attrs["average_poloidal_arc_spacing"]
+            ),
             atol=1e-10,
         )
 
@@ -1345,8 +1410,12 @@ class TestVectorizedTrace:
     @pytest.mark.parametrize("mode", [(1, 1), (2, 1), (3, 2), (4, 3), (3, 1), (2, -1)])
     def test_points_lie_on_rational_surface(self, eq_field, mode):
         tracer = EquilibriumFilamentTracer(mode, eq_field, base_num_points=401)
-        points, _ = tracer.trace()
-        psi_q = eq_field.get_psi_of_q(abs(Fraction(*mode)))
+        points, _ = tracer.trace(trace_type=EquilibriumFilamentTracer.TraceType.NAIVE)
+        q_target = float(abs(Fraction(*mode)))
+        try:
+            psi_q = eq_field.get_psi_of_q_raw(q_target)
+        except ValueError:
+            psi_q = eq_field.get_psi_of_q(q_target)
         delta_psi = abs(eq_field.eqdsk.sibdry - eq_field.eqdsk.simagx)
         residual = np.abs(eq_field.psi.ev(points[:, 0], points[:, 2]) - psi_q)
         assert residual.max() / delta_psi < 1e-6
@@ -1378,3 +1447,68 @@ class TestVectorizedTrace:
         )
         points, _ = lenient.trace()
         np.testing.assert_allclose(abs(points[-1, 1]), 2 * np.pi, rtol=1e-12)
+
+    def test_field_trace_matches_average_endpoint(self, eq_field):
+        """FIELD tracing reaches the same requested toroidal endpoint as AVERAGE."""
+        mode = (2, 1)
+        num_points = 101
+        tracer = EquilibriumFilamentTracer(
+            mode,
+            eq_field,
+            base_num_points=num_points,
+            scale_points=False,
+            prevent_synthetic_structure=False,
+        )
+
+        average_points, average_etas = tracer.trace(
+            trace_type=EquilibriumFilamentTracer.TraceType.AVERAGE
+        )
+        field_points, field_etas = tracer.trace(
+            trace_type=EquilibriumFilamentTracer.TraceType.FIELD
+        )
+
+        assert average_points.shape == (num_points, 3)
+        assert field_points.shape == (num_points, 3)
+        assert average_etas.shape == (num_points,)
+        assert field_etas.shape == (num_points,)
+        assert np.all(np.isfinite(field_points))
+        assert np.sign(field_points[-1, 1]) == np.sign(average_points[-1, 1])
+        expected_phi_end = 2 * np.pi * float(abs(Fraction(*mode)))
+        np.testing.assert_allclose(
+            abs(average_points[-1, 1]), expected_phi_end, rtol=1e-12
+        )
+        np.testing.assert_allclose(
+            abs(field_points[-1, 1]), expected_phi_end, rtol=1e-12
+        )
+
+    def test_get_filament_ds_uses_field_trace_type(self, eq_field):
+        """get_filament_ds passes TraceType.FIELD through to the equilibrium tracer."""
+        num_filaments = 5
+        tracer = EquilibriumFilamentTracer(
+            (2, 1),
+            eq_field,
+            base_num_points=101,
+            scale_points=False,
+            prevent_synthetic_structure=False,
+        )
+
+        filament_ds = tracer.get_filament_ds(
+            num_filaments=num_filaments,
+            coordinate_system="cylindrical",
+            trace_type=EquilibriumFilamentTracer.TraceType.FIELD,
+        )
+
+        assert filament_ds["R"].shape == (num_filaments, tracer.num_points)
+        assert filament_ds["phi"].shape == (num_filaments, tracer.num_points)
+        assert filament_ds["Z"].shape == (num_filaments, tracer.num_points)
+        assert filament_ds["current"].shape == (num_filaments,)
+        assert (
+            tracer.num_points,
+            EquilibriumFilamentTracer.TraceType.FIELD,
+        ) in tracer.trace_cache
+        assert "average_poloidal_arc_spacing" in filament_ds.attrs
+        np.testing.assert_allclose(
+            np.abs(filament_ds["current"].values),
+            filament_ds.attrs["average_poloidal_arc_spacing"],
+            rtol=1e-10,
+        )
