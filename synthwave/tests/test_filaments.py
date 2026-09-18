@@ -1413,9 +1413,9 @@ class TestVectorizedTrace:
         points, _ = tracer.trace(trace_type=EquilibriumFilamentTracer.TraceType.NAIVE)
         q_target = float(abs(Fraction(*mode)))
         try:
-            psi_q = eq_field.get_psi_of_q_raw(q_target)
-        except ValueError:
             psi_q = eq_field.get_psi_of_q(q_target)
+        except ValueError:
+            psi_q = eq_field.get_psi_of_q_raw(q_target)
         delta_psi = abs(eq_field.eqdsk.sibdry - eq_field.eqdsk.simagx)
         residual = np.abs(eq_field.psi.ev(points[:, 0], points[:, 2]) - psi_q)
         assert residual.max() / delta_psi < 1e-6

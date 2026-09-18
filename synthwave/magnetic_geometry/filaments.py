@@ -589,12 +589,12 @@ class EquilibriumFilamentTracer(FilamentTracer):
         q_target = np.abs(m_local / n_local)
 
         # With the target q-surface in hand, we need to find the psi contour which corresponds to it.
-        # If the target q-value is within the provided EQDSK range, and the q-values are monotonic,
-        # a simple interpolation can be used. If either of these conditions is not met, we need to use a more robust method to find the psi contour.
+        # Use the smoothed q(psi) model (consistent with self.eq_field.qpsi/F used elsewhere),
+        # falling back to raw table interpolation only if the smoothed solve cannot be inverted.
         try:
-            psi_q = self.eq_field.get_psi_of_q_raw(q_target)
-        except ValueError:
             psi_q = self.eq_field.get_psi_of_q(q_target)
+        except ValueError:
+            psi_q = self.eq_field.get_psi_of_q_raw(q_target)
 
         sign_Ip = int(np.sign(float(self.eq_field.eqdsk.cpasma)))
         sign_Bt = int(np.sign(float(self.eq_field.F(psi_q))))
