@@ -6,13 +6,17 @@ Two first-order errors used to dominate the direct response of high (m, n) modes
    a full segment on top of the half segments of the interior central differences.
    Every filament carried one extra segment of current at its ends. The ends sit at
    the outboard midplane next to the sensors and carry exp(i n phi0), so the extra
-   elements form a spurious n-th harmonic ring current of order 1/num_points. For a
-   4/3 mode at 401 base points it was 2.8x the true signal.
-2. EquilibriumFilamentTracer.trace set phi_k = cumsum(d_phi) - d_phi[0], the sum of
-   segments 1..k instead of 0..k-1, a poloidally varying error of order
-   2 pi (m/n) / num_points.
+   elements form a spurious n-th harmonic ring current of order 1/num_points.
+   For a 4/3 mode at 401 base points it was 2.8x the true signal.
+2. EquilibriumFilamentTracer.trace set phi_k = cumsum(d_phi) - d_phi[0],
+   the sum of segments 1..k instead of 0..k-1,
+   a poloidally varying error of order 2 pi (m/n) / num_points.
 
-With the segment-midpoint rule and the trapezoid phi integral both converge at second order.
+With the segment-midpoint rule and the trapezoid phi integral both converge at second order,
+so doubling the number of elements should reduce the error by a factor of 4.
+The tests below check that scaling against an analytic solution or a 3200 high-resolution reference.
+Also one sanity check that cutting a loop into arcs changes nothing.
+
 The thresholds below have at least a 10x margin on the new implementation and
 fail the old one by at least 10x (old values quoted in each docstring).
 """

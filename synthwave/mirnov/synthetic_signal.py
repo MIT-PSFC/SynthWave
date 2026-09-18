@@ -1,16 +1,95 @@
-import os
-from typing import Optional
+from __future__ import annotations
 
-import matplotlib.pyplot as plt
+import os
+from typing import TYPE_CHECKING, Optional
+
 import numpy as np
-import pyvista
-import vtk
 import xarray as xr
-from OpenFUSIONToolkit import OFT_env
-from OpenFUSIONToolkit.ThinCurr import ThinCurr
 from scipy.constants import mu_0
 
 from synthwave.magnetic_geometry.filaments import FilamentTracer
+
+# OpenFUSIONToolkit loads its shared libraries on import, so the ThinCurr functions
+# import it themselves and the Biot-Savart functions here stay usable without it
+if TYPE_CHECKING:
+    from OpenFUSIONToolkit import OFT_env
+
+
+def filament_flux_matrix(
+    sensor_details: xr.Dataset,
+    filament_list: list,
+    max_block_elements: int = 2**18,
+) -> np.ndarray:
+    """Vectorized Biot-Savart: unit-current flux of every filament through every sensor.
+
+    Every polyline segment of every filament is one current element dl at its midpoint m.
+    Its flux through a sensor at p with normal n is proportional to (dl x (p - m)) . n / |p - m|^3.
+    The numerator expands to dl . (p x n) - n . (dl x m), so over all sensor and segment
+    pairs it is one rank 6 matrix product. Only the distance is formed elementwise.
+    The segments of all filaments are stacked and processed in blocks
+    so the (n_sensors, n_segments) work arrays stay below max_block_elements each,
+    which keeps them in cache.
+
+    This optimal block size is hardware-dependent, but doesn't appear to be too sensitive.
+    As long as it's in the 2**14 - 2**20 range the performance is good.
+
+    The direct response of any current pattern on these filaments is current_list @ flux,
+    so modes sharing a filament set (harmonics on one rational surface) share this matrix.
+
+    Args:
+        sensor_details: Dataset with position (n_sensors, 3), normal (n_sensors, 3), radius (n_sensors,).
+        filament_list: List of (N_pts, 3) cartesian filament point arrays. NaN points are dropped,
+            a filament with fewer than 2 valid points contributes zero flux.
+        max_block_elements: Upper bound on n_sensors * n_segments per block.
+
+    Returns:
+        Real array of shape (n_filaments, n_sensors), flux [Wb] per unit filament current [A].
+    """
+    sensor_positions = np.asarray(sensor_details["position"].data, dtype=float)
+    sensor_normals = np.asarray(sensor_details["normal"].data, dtype=float)
+    sensor_areas = np.pi * np.asarray(sensor_details["radius"].data, dtype=float) ** 2
+    num_sensors = len(sensor_positions)
+
+    dl_parts, midpoint_parts, owner_parts = [], [], []
+    for i, filament_pts in enumerate(filament_list):
+        filament_pts = np.asarray(filament_pts, dtype=float)
+        filament_pts = filament_pts[~np.isnan(filament_pts).any(axis=1)]
+        if len(filament_pts) < 2:
+            continue
+        dl_parts.append(filament_pts[1:] - filament_pts[:-1])
+        midpoint_parts.append(0.5 * (filament_pts[1:] + filament_pts[:-1]))
+        owner_parts.append(np.full(len(filament_pts) - 1, i))
+
+    flux = np.zeros((len(filament_list), num_sensors))
+    if not dl_parts:
+        return flux
+    dl = np.concatenate(dl_parts)
+    midpoints = np.concatenate(midpoint_parts)
+    owner = np.concatenate(owner_parts)
+
+    # (dl x (p - m)) . n = dl . (p x n) - n . (dl x m)
+    sensor_factors = np.hstack(
+        (np.cross(sensor_positions, sensor_normals), -sensor_normals)
+    )
+    segment_factors = np.hstack((dl, np.cross(dl, midpoints)))
+
+    block = max(1, max_block_elements // max(num_sensors, 1))
+    for start in range(0, len(dl), block):
+        stop = start + block
+        # Distance components as (n_sensors, n_seg) arrays
+        r_x = sensor_positions[:, 0:1] - midpoints[None, start:stop, 0]
+        r_y = sensor_positions[:, 1:2] - midpoints[None, start:stop, 1]
+        r_z = sensor_positions[:, 2:3] - midpoints[None, start:stop, 2]
+        r2 = r_x * r_x + r_y * r_y + r_z * r_z
+        contribution = sensor_factors @ segment_factors[start:stop].T
+        contribution /= r2 * np.sqrt(r2)
+        # Segments are stored filament by filament, so each filament in the block is one
+        # contiguous run: reduce every run and add it to its owner row
+        owner_block = owner[start:stop]
+        run_starts = np.concatenate([[0], np.flatnonzero(np.diff(owner_block)) + 1])
+        run_sums = np.add.reduceat(contribution, run_starts, axis=1)
+        flux[owner_block[run_starts]] += run_sums.T
+    return flux * (mu_0 / (4 * np.pi)) * sensor_areas[None, :]
 
 
 def filament_flux_matrix(
@@ -116,6 +195,7 @@ def direct_response_thincurr(
 
     From testing, the vessel response has minimal impact on the phases, so this can be used for spectral analysis.
     """
+    from OpenFUSIONToolkit.ThinCurr import ThinCurr
 
     # Create thin wall model
     tw_model = ThinCurr(oft_env)
@@ -217,10 +297,10 @@ def frequency_response_thincurr(
         direct_response (np.ndarray): Complex array of sensor signals due to direct filament coupling [T]
         vessel_response (np.ndarray): Complex array of sensor signals due to vessel currents [T]
     """
+    from OpenFUSIONToolkit.ThinCurr import ThinCurr
 
-    # Directory for caching inductance matrices, which can take a long time to compute
+    # working directory for caching inductance matrices, which can take a long time to compute
     # ThinCurr checks the hashes of input files to determine if cache is valid
-
     # Create thin wall model
     tw_model = ThinCurr(oft_env)
     if hodlr_svd_tol is not None:
@@ -278,6 +358,10 @@ def frequency_response_thincurr(
     total_response = direct_response + vessel_response
 
     if debug_plot_path is not None:
+        import matplotlib.pyplot as plt
+        import pyvista
+        import vtk
+
         # Only plotting to file, don't try to use a display
         pyvista.OFF_SCREEN = True
         vtk.vtkLogger.SetStderrVerbosity(vtk.vtkLogger.VERBOSITY_OFF)
