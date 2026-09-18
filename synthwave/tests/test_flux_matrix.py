@@ -145,8 +145,14 @@ class TestSharedSurface:
         expected = direct_response_biot_savart(
             sensors, harmonic_filaments, harmonic_currents
         )
-        actual = filament_currents(harmonic, self.NUM_FILAMENTS) @ filament_flux_matrix(
-            sensors, base_filaments
+        # get_filament_list currents are filament_currents(...) scaled by the average
+        # poloidal arc spacing (see get_filament_ds's current_normalization attr), so the
+        # unit-current phasor vector must be scaled the same way to match harmonic_currents.
+        average_poloidal_arc_spacing = np.abs(harmonic_currents[0])
+        actual = (
+            average_poloidal_arc_spacing
+            * filament_currents(harmonic, self.NUM_FILAMENTS)
+            @ filament_flux_matrix(sensors, base_filaments)
         )
         np.testing.assert_allclose(
             actual, expected, rtol=1e-12, atol=1e-14 * np.abs(expected).max()
@@ -160,9 +166,13 @@ class TestSharedSurface:
             self.NUM_FILAMENTS, coordinate_system="cylindrical"
         )
         currents = ds["current"].values
-        np.testing.assert_array_equal(
-            currents, filament_currents(mode, self.NUM_FILAMENTS)
+        # get_filament_ds scales filament_currents(...) by average_poloidal_arc_spacing
+        # (see the dataset's current_normalization attr).
+        expected_currents = (
+            filament_currents(mode, self.NUM_FILAMENTS)
+            * ds.attrs["average_poloidal_arc_spacing"]
         )
+        np.testing.assert_allclose(currents, expected_currents)
         np.testing.assert_allclose(
             ds["phi"].values[:, 0] - ds["phi"].values[0, 0],
             filament_offsets(self.NUM_FILAMENTS),
