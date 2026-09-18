@@ -100,7 +100,7 @@ def detect_cocos(eqdsk: GEQDSKFile, sign_RphiZ: int | None = 1) -> int | None:
     # From table III: sign(dpsi) = sign_Bp * sign_Ip
     sign_Bp = int(psi_increasing * sign_Ip)
 
-    def _e_Bp(eqdsk):
+    def _e_Bp_new(eqdsk):
         # Detect e_Bp via the Grad-Shafranov residual.
         # The GS equation for psi in Wb/rad (e_Bp=0) is:
         #   Delta*(psi) = -(mu_0*R^2*pprime + ffprime)
@@ -132,22 +132,25 @@ def detect_cocos(eqdsk: GEQDSKFile, sign_RphiZ: int | None = 1) -> int | None:
             + psirz_spline.ev(R_2d, Z_2d, dx=0, dy=2)
         )
 
-        # RHS from the stored profiles, mapped over normalized psi (axis=0, boundary=1).
-        # Clipping keeps the np.interp x-axis increasing regardless of psi sign convention.
-        psi_norm_2d = (psirz - simagx) / (sibdry - simagx)
-        psi_norm_1d = np.linspace(0.0, 1.0, len(eqdsk.pprime))
-        pprime_2d = np.interp(
-            np.clip(psi_norm_2d, 0.0, 1.0), psi_norm_1d, np.asarray(eqdsk.pprime, float)
-        )
-        ffprime_2d = np.interp(
-            np.clip(psi_norm_2d, 0.0, 1.0),
-            psi_norm_1d,
-            np.asarray(eqdsk.ffprime, float),
-        )
+        # RHS from the stored profiles, mapped over the raw physical psi grid.
+        # psi can run either direction from axis to boundary depending on sign(Ip),
+        # but np.interp requires its xp to be increasing, so flip both the mesh and
+        # the profiles together when psi decreases from axis to boundary.
+        pprime_raw = np.asarray(eqdsk.pprime, dtype=float)
+        ffprime_raw = np.asarray(eqdsk.ffprime, dtype=float)
+        psi_1d_mesh = np.linspace(simagx, sibdry, len(pprime_raw))
+        if psi_1d_mesh[0] > psi_1d_mesh[-1]:
+            psi_1d_mesh = psi_1d_mesh[::-1]
+            pprime_raw = pprime_raw[::-1]
+            ffprime_raw = ffprime_raw[::-1]
+
+        pprime_2d = np.interp(psirz, psi_1d_mesh, pprime_raw)
+        ffprime_2d = np.interp(psirz, psi_1d_mesh, ffprime_raw)
         rhs_gs = -(mu_0 * R_2d**2 * pprime_2d + ffprime_2d)
 
         # Use only the plasma core: away from the magnetic axis (small signal) and the
         # boundary/X-point (where the spline gradients and GS residual break down).
+        psi_norm_2d = (psirz - simagx) / (sibdry - simagx)
         mask = (psi_norm_2d >= 0.05) & (psi_norm_2d <= 0.95)
         rhs_max = np.max(np.abs(rhs_gs[mask])) if np.any(mask) else 0.0
         if rhs_max == 0:
@@ -162,92 +165,6 @@ def detect_cocos(eqdsk: GEQDSKFile, sign_RphiZ: int | None = 1) -> int | None:
 
         return 0 if alpha < 2 * np.pi else 1
 
-    def _e_Bp_new(eqdsk):
-        # Detect e_Bp via Grad-Shafranov residual.
-        # The GS equation for psi in Wb/rad (e_Bp=0) is:
-        #   Delta*(psi) = -(mu_0*R^2*pprime + ffprime)
-        # If psi is in Weber (e_Bp=1) the same stored pprime/ffprime satisfy:
-        #   Delta*(psi) = -(2*pi)^2 * (mu_0*R^2*pprime + ffprime)
-        # Fit alpha such that lhs = alpha * rhs_ebp0: alpha~1 -> e_Bp=0, alpha~(2*pi)^2 -> e_Bp=1.
-
-        # 1. Set up the exact coordinate vectors and grids
-        R_1d = np.array(eqdsk.r_grid[:, 0], dtype=float)
-        Z_1d = np.array(eqdsk.z_grid[0, :], dtype=float)
-
-        # Build 2D meshgrids for direct spline evaluation
-        R_2d, Z_2d = np.meshgrid(R_1d, Z_1d, indexing="ij")
-
-        psi_2d = np.array(eqdsk.psi, dtype=float)
-        if psi_2d.shape == (len(Z_1d), len(R_1d)):
-            psi_2d = psi_2d.T  # Ensure shape is (nR, nZ) to match Spline indexing
-
-        # Reconstruct the exact 2D spline of psi for analytic differentiation
-        psi_spline = RectBivariateSpline(R_1d, Z_1d, psi_2d, kx=3, ky=3, s=0)
-
-        # 2. Evaluate LHS of the Grad-Shafranov Equation analytically via Spline
-        # Delta*(psi) = d2psi/dR2 - (1/R)*dpsi/dR + d2psi/dZ2
-        d2psi_dR2 = psi_spline.ev(R_2d, Z_2d, dx=2, dy=0)
-        dpsi_dR = psi_spline.ev(R_2d, Z_2d, dx=1, dy=0)
-        d2psi_dZ2 = psi_spline.ev(R_2d, Z_2d, dx=0, dy=2)
-
-        lhs_gs = d2psi_dR2 - (dpsi_dR / R_2d) + d2psi_dZ2
-
-        # 3. Map 1D profiles over the raw, physical linear Psi grid
-        pprime_raw = np.array(eqdsk.pprime, dtype=float)
-        ffprime_raw = np.array(eqdsk.ffprime, dtype=float)
-
-        simagx = float(eqdsk.simagx)
-        sibdry = float(eqdsk.sibdry)
-
-        psi_1d_mesh = np.linspace(simagx, sibdry, len(pprime_raw))
-
-        # Interpolate 1D profiles directly to the 2D raw psi map
-        pprime_2d = np.interp(psi_2d, psi_1d_mesh, pprime_raw)
-        ffprime_2d = np.interp(psi_2d, psi_1d_mesh, ffprime_raw)
-
-        # Calculate the RHS assuming e_Bp = 0
-        rhs_gs = -(mu_0 * R_2d**2 * pprime_2d + ffprime_2d)
-
-        # 4. Calculate Normalized Psi to isolate the core plasma region
-        # Axis = 0.0, LCFS Boundary = 1.0
-        psi_norm_2d = (psi_2d - simagx) / (sibdry - simagx)
-
-        # Flatten arrays for regression
-        lhs_flat = lhs_gs.ravel()
-        rhs_flat = rhs_gs.ravel()
-        psi_norm_flat = psi_norm_2d.ravel()
-
-        rhs_max = np.max(np.abs(rhs_flat))
-        if rhs_max == 0:
-            return 0
-
-        # Physical Mask: Only include points well inside the plasma core
-        # We cut off at psi_norm = 0.95 to stay clear of the boundary pedestal
-        # and X-point numerical artifacts where the spline gradients can get noisy.
-        plasma_core_mask = (psi_norm_flat >= 0.0) & (psi_norm_flat <= 0.95)
-
-        # Signal Noise Mask: Ignore regions where RHS is fundamentally zero
-        signal_mask = np.abs(rhs_flat) > 0.05 * rhs_max
-
-        # Combined clean mask
-        final_mask = plasma_core_mask & signal_mask
-
-        lhs_valid = lhs_flat[final_mask]
-        rhs_valid = rhs_flat[final_mask]
-
-        # Global linear regression: alpha = sum(LHS * RHS) / sum(RHS^2)
-        alpha = np.dot(lhs_valid, rhs_valid) / np.dot(rhs_valid, rhs_valid)
-
-        logger.debug(
-            f"Detected Grad-Shafranov scaling alpha factor (Core Plasma Only): {alpha:.4f}"
-        )
-
-        # Distinguish e_Bp = 0 (alpha ~ 1) from e_Bp = 1 (alpha ~ 39.4) using geometric mean (2*pi)
-        e_Bp = 0 if alpha < 2 * np.pi else 1
-
-        return e_Bp
-
-    # e_Bp = _e_Bp(eqdsk)
     e_Bp = _e_Bp_new(eqdsk)
 
     # From Sauter Table I: sign(q) = sign_rhotp * sign(Ip * B0), so
@@ -478,7 +395,7 @@ class EquilibriumField:
 
     def get_psi_of_q_old(self, q):
         """Get psi corresponding to a given q. Works in |q| space."""
-        q_abs = np.abs(q)
+        q_abs = float(abs(q))
         qpsi_grid = self.qpsi_abs(self.psi_grid)
         psi_guess = self.psi_grid[np.argmin(np.abs(qpsi_grid - q_abs))]
         psi = newton(
@@ -497,7 +414,7 @@ class EquilibriumField:
     def get_psi_of_q_raw(self, q):
         # Simple interpolation of raw |q|-psi grid to get an initial guess for psi(q)
         # For "regular" q-profiles, this is usually sufficient.
-        q_abs = np.abs(q)
+        q_abs = float(abs(q))
         qpsi_raw = np.abs(np.array(self.eqdsk.qpsi, dtype=float))
         psi_raw = np.array(self.psi_grid, dtype=float)
         if not (np.all(np.diff(qpsi_raw) >= 0) or np.all(np.diff(qpsi_raw) <= 0)):
@@ -523,7 +440,7 @@ class EquilibriumField:
         q-profiles (based on DIII-D tests)
 
         """
-        q_abs = np.abs(q)
+        q_abs = float(abs(q))
 
         # Make an initial guess based on the smoothed |q|-psi grid.
         qpsi_grid = self.qpsi_abs(self.psi_grid)
@@ -591,6 +508,7 @@ class EquilibriumField:
         The issue appears to be that although psi is continuous and monotonic,
         q values can be "grouped" in an odd, stepwise fashion
         """
+        q = float(abs(q))
         is_increasing = (self.psi_grid[1] - self.psi_grid[0]) > 0
 
         if is_increasing:
