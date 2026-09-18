@@ -7,7 +7,6 @@ from typing import Optional
 import numpy as np
 import xarray as xr
 from loguru import logger
-from OpenFUSIONToolkit.ThinCurr.sensor import Mirnov, save_sensors
 
 
 def gen_OFT_filament_and_eta_file(
@@ -71,6 +70,8 @@ def gen_OFT_sensors_file(
     Returns:
         str: Path to the generated OFT sensor file
     """
+    from OpenFUSIONToolkit.ThinCurr.sensor import Mirnov, save_sensors
+
     # Assume sensor_details is an xarray dataset with the following variables:
     # X, Y, Z (coordinates of each sensor)
     # theta, phi (orientation of each sensor)
