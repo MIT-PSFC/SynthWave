@@ -417,6 +417,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
         default_trace_type: TraceType = TraceType.AVERAGE,
         helicity_sign: Optional[int] = None,
         closure_rtol: float = 0.1,
+        psi_surface: Optional[float] = None,
     ):
         """Initialize an equilibrium filament.
 
@@ -445,6 +446,11 @@ class EquilibriumFilamentTracer(FilamentTracer):
             poloidal turn against 2 pi m / n. The miss equals the relative difference
             between the field line q of the traced surface and m / n.
             A trace beyond it raises FilamentTraceError instead of being rescaled.
+        psi_surface : float, optional
+            Poloidal flux of the surface to trace on instead of the q = m/n surface.
+            The field line on it is rescaled to close at 2 pi m / n,
+            so pass closure_rtol=np.inf when its q differs from m / n by design.
+            None (default) traces the q = m/n surface.
 
         """
         super().__init__(
@@ -459,6 +465,7 @@ class EquilibriumFilamentTracer(FilamentTracer):
             helicity_sign if helicity_sign is not None else (1 if self.n >= 0 else -1)
         )
         self.closure_rtol = closure_rtol
+        self.psi_surface = psi_surface
         self.trace_cache = {}
 
     def trace(
@@ -501,7 +508,10 @@ class EquilibriumFilamentTracer(FilamentTracer):
         ratio = Fraction(self.m, self.n)
         m_local = np.abs(ratio.numerator)
         n_local = ratio.denominator
-        psi_q = self.eq_field.get_psi_of_q(np.abs(m_local / n_local))
+        if self.psi_surface is not None:
+            psi_q = self.psi_surface
+        else:
+            psi_q = self.eq_field.get_psi_of_q(np.abs(m_local / n_local))
 
         sign_Ip = int(np.sign(float(self.eq_field.eqdsk.cpasma)))
         sign_Bt = int(np.sign(float(self.eq_field.F(psi_q))))
