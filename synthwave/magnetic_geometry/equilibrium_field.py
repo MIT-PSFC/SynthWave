@@ -3,7 +3,7 @@ from freeqdsk.geqdsk import GEQDSKFile
 from loguru import logger
 from scipy.constants import mu_0
 from scipy.interpolate import RectBivariateSpline, make_smoothing_spline
-from scipy.optimize import newton
+from scipy.optimize import newton, root_scalar
 
 from synthwave.magnetic_geometry.utils import (
     cartesian_to_cylindrical,
@@ -100,7 +100,7 @@ def detect_cocos(eqdsk: GEQDSKFile, sign_RphiZ: int | None = 1) -> int | None:
     # From table III: sign(dpsi) = sign_Bp * sign_Ip
     sign_Bp = int(psi_increasing * sign_Ip)
 
-    def _e_Bp(eqdsk):
+    def _e_Bp_new(eqdsk):
         # Detect e_Bp via the Grad-Shafranov residual.
         # The GS equation for psi in Wb/rad (e_Bp=0) is:
         #   Delta*(psi) = -(mu_0*R^2*pprime + ffprime)
@@ -132,22 +132,25 @@ def detect_cocos(eqdsk: GEQDSKFile, sign_RphiZ: int | None = 1) -> int | None:
             + psirz_spline.ev(R_2d, Z_2d, dx=0, dy=2)
         )
 
-        # RHS from the stored profiles, mapped over normalized psi (axis=0, boundary=1).
-        # Clipping keeps the np.interp x-axis increasing regardless of psi sign convention.
-        psi_norm_2d = (psirz - simagx) / (sibdry - simagx)
-        psi_norm_1d = np.linspace(0.0, 1.0, len(eqdsk.pprime))
-        pprime_2d = np.interp(
-            np.clip(psi_norm_2d, 0.0, 1.0), psi_norm_1d, np.asarray(eqdsk.pprime, float)
-        )
-        ffprime_2d = np.interp(
-            np.clip(psi_norm_2d, 0.0, 1.0),
-            psi_norm_1d,
-            np.asarray(eqdsk.ffprime, float),
-        )
+        # RHS from the stored profiles, mapped over the raw physical psi grid.
+        # psi can run either direction from axis to boundary depending on sign(Ip),
+        # but np.interp requires its xp to be increasing, so flip both the mesh and
+        # the profiles together when psi decreases from axis to boundary.
+        pprime_raw = np.asarray(eqdsk.pprime, dtype=float)
+        ffprime_raw = np.asarray(eqdsk.ffprime, dtype=float)
+        psi_1d_mesh = np.linspace(simagx, sibdry, len(pprime_raw))
+        if psi_1d_mesh[0] > psi_1d_mesh[-1]:
+            psi_1d_mesh = psi_1d_mesh[::-1]
+            pprime_raw = pprime_raw[::-1]
+            ffprime_raw = ffprime_raw[::-1]
+
+        pprime_2d = np.interp(psirz, psi_1d_mesh, pprime_raw)
+        ffprime_2d = np.interp(psirz, psi_1d_mesh, ffprime_raw)
         rhs_gs = -(mu_0 * R_2d**2 * pprime_2d + ffprime_2d)
 
         # Use only the plasma core: away from the magnetic axis (small signal) and the
         # boundary/X-point (where the spline gradients and GS residual break down).
+        psi_norm_2d = (psirz - simagx) / (sibdry - simagx)
         mask = (psi_norm_2d >= 0.05) & (psi_norm_2d <= 0.95)
         rhs_max = np.max(np.abs(rhs_gs[mask])) if np.any(mask) else 0.0
         if rhs_max == 0:
@@ -162,7 +165,7 @@ def detect_cocos(eqdsk: GEQDSKFile, sign_RphiZ: int | None = 1) -> int | None:
 
         return 0 if alpha < 2 * np.pi else 1
 
-    e_Bp = _e_Bp(eqdsk)
+    e_Bp = _e_Bp_new(eqdsk)
 
     # From Sauter Table I: sign(q) = sign_rhotp * sign(Ip * B0), so
     # sign_rhotp = sign(q) * sign(Ip) * sign(B0)
@@ -390,9 +393,9 @@ class EquilibriumField:
 
         return np.array([Br, Bt, Bz])
 
-    def get_psi_of_q(self, q):
+    def get_psi_of_q_old(self, q):
         """Get psi corresponding to a given q. Works in |q| space."""
-        q_abs = np.abs(q)
+        q_abs = float(abs(q))
         qpsi_grid = self.qpsi_abs(self.psi_grid)
         psi_guess = self.psi_grid[np.argmin(np.abs(qpsi_grid - q_abs))]
         psi = newton(
@@ -408,6 +411,95 @@ class EquilibriumField:
 
         return psi
 
+    def get_psi_of_q_raw(self, q):
+        # Simple interpolation of raw |q|-psi grid to get an initial guess for psi(q)
+        # For "regular" q-profiles, this is usually sufficient.
+        q_abs = float(abs(q))
+        qpsi_raw = np.abs(np.array(self.eqdsk.qpsi, dtype=float))
+        psi_raw = np.array(self.psi_grid, dtype=float)
+        if not (np.all(np.diff(qpsi_raw) >= 0) or np.all(np.diff(qpsi_raw) <= 0)):
+            raise ValueError(
+                "Raw abs(qpsi) profile is not monotonic and cannot be inverted safely"
+            )
+
+        if q_abs < qpsi_raw.min() or q_abs > qpsi_raw.max():
+            raise ValueError(
+                "Requested abs(q) is outside the raw abs(qpsi) range: %s not in [%s, %s]"
+                % (q_abs, qpsi_raw.min(), qpsi_raw.max())
+            )
+
+        return float(np.interp(q_abs, qpsi_raw, psi_raw))
+
+    def get_psi_of_q(self, q):
+        """
+        Get psi corresponding to a given |q|
+        Slightly improved to try and use a bounded solver if possible,
+        otherwise fall back to unbounded Newton's method
+        The advantages of this is that it can circumvent some unusual, high m/n
+        cases where the solver can get stuck near x-points, and non-monotonic
+        q-profiles (based on DIII-D tests)
+
+        """
+        q_abs = float(abs(q))
+
+        # Make an initial guess based on the smoothed |q|-psi grid.
+        qpsi_grid = self.qpsi_abs(self.psi_grid)
+        psi_guess_index = np.argmin(np.abs(qpsi_grid - q_abs))
+        psi_guess = self.psi_grid[psi_guess_index]
+
+        q_at_guess = float(self.qpsi_abs(psi_guess))
+        if np.isclose(q_at_guess, q_abs, atol=1e-12):
+            psi = psi_guess
+        else:
+            # Check if initial guess is within bounds of Psi
+            if psi_guess_index == 0 or psi_guess_index == len(self.psi_grid) - 1:
+                raise ValueError(
+                    "Initial guess for psi is out of bounds. Requested abs(q)=%1.3f is outside the gEQDSK range (q_min = %1.3f, q_max = %1.3f)."
+                    % (q_abs, qpsi_grid.min(), qpsi_grid.max())
+                )
+
+            # Bound possible psi values around initial guess from psi grid
+            psi_lo = (
+                self.psi_grid[psi_guess_index - 5]
+                if psi_guess_index - 5 >= 0
+                else self.psi_grid[0]
+            )
+            psi_hi = (
+                self.psi_grid[psi_guess_index + 10]
+                if psi_guess_index + 10 < len(self.psi_grid)
+                else self.psi_grid[-1]
+            )
+
+            a = min(psi_lo, psi_hi)
+            b = max(psi_lo, psi_hi)
+
+            def fn_psi(psi):
+                return self.qpsi_abs(psi) - q_abs
+
+            # Use a bounded solver if possible, otherwise fall back to unbounded Newton's method
+            bracket_found = np.sign(fn_psi(a)) != np.sign(fn_psi(b))
+            if bracket_found:
+                result = root_scalar(
+                    fn_psi,
+                    bracket=[a, b],
+                    method="toms748",
+                    xtol=1e-10,
+                    maxiter=200,
+                )
+                psi = float(result.root)
+            else:
+                psi = newton(
+                    func=lambda psi: np.abs(self.qpsi_abs(psi) - q_abs),
+                    x0=psi_guess,
+                    fprime=lambda psi: self.qpsi_abs.derivative(1)(psi),
+                    maxiter=800,
+                    tol=1e-10,
+                )
+
+        # Ensure that the final psi value is consistent with the |qpsi| grid
+        psi = self.core_psi_consistency_check(qpsi_grid, psi, q_abs)
+        return psi
+
     def core_psi_consistency_check(self, qpsi_grid, psi, q):
         """Check for q~<=1
         Depending on the resolution of the gEQDSK file, the interpolation function can request
@@ -416,6 +508,7 @@ class EquilibriumField:
         The issue appears to be that although psi is continuous and monotonic,
         q values can be "grouped" in an odd, stepwise fashion
         """
+        q = float(abs(q))
         is_increasing = (self.psi_grid[1] - self.psi_grid[0]) > 0
 
         if is_increasing:

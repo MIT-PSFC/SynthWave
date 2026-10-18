@@ -19,8 +19,9 @@ def filament_flux_matrix(
     sensor_details: xr.Dataset,
     filament_list: list,
     max_block_elements: int = 2**18,
+    as_field: bool = False,
 ) -> np.ndarray:
-    """Vectorized Biot-Savart: unit-current flux of every filament through every sensor.
+    """Vectorized Biot-Savart: unit-current flux (or mean field) of every filament at every sensor.
 
     Every polyline segment of every filament is one current element dl at its midpoint m.
     Its flux through a sensor at p with normal n is proportional to (dl x (p - m)) . n / |p - m|^3.
@@ -41,9 +42,12 @@ def filament_flux_matrix(
         filament_list: List of (N_pts, 3) cartesian filament point arrays. NaN points are dropped,
             a filament with fewer than 2 valid points contributes zero flux.
         max_block_elements: Upper bound on n_sensors * n_segments per block.
+        as_field: If True, divide out the sensor coil area pi * radius^2 and return the mean
+            field through the coil [T] instead of the flux [Wb].
 
     Returns:
-        Real array of shape (n_filaments, n_sensors), flux [Wb] per unit filament current [A].
+        Real array of shape (n_filaments, n_sensors), per unit filament current [A]:
+        flux [Wb/A], or field [T/A] when as_field is True.
     """
     sensor_positions = np.asarray(sensor_details["position"].data, dtype=float)
     sensor_normals = np.asarray(sensor_details["normal"].data, dtype=float)
@@ -89,25 +93,30 @@ def filament_flux_matrix(
         run_starts = np.concatenate([[0], np.flatnonzero(np.diff(owner_block)) + 1])
         run_sums = np.add.reduceat(contribution, run_starts, axis=1)
         flux[owner_block[run_starts]] += run_sums.T
-    return flux * (mu_0 / (4 * np.pi)) * sensor_areas[None, :]
+    flux *= mu_0 / (4 * np.pi)
+    if as_field:
+        return flux
+    return flux * sensor_areas[None, :]
 
 
 def direct_response_biot_savart(
     sensor_details: xr.Dataset,
     filament_list: list,
     current_list: list,
+    as_field: bool = False,
 ) -> np.ndarray:
-    """Vectorized Biot-Savart direct response: filaments -> sensor flux.
+    """Vectorized Biot-Savart direct response: filaments -> sensor flux (or field).
 
     Args:
         sensor_details: Dataset with position (n_sensors, 3), normal (n_sensors, 3), radius (n_sensors,).
         filament_list: List of (N_pts, 3) filament point arrays.
         current_list: List of complex currents, one per filament.
+        as_field: If True, return the mean field [T] instead of the flux [Wb], see filament_flux_matrix.
 
     Returns:
-        Complex array of shape (n_sensors,): total flux through each sensor.
+        Complex array of shape (n_sensors,): total flux [Wb] (or field [T]) at each sensor.
     """
-    flux = filament_flux_matrix(sensor_details, filament_list)
+    flux = filament_flux_matrix(sensor_details, filament_list, as_field=as_field)
     return np.asarray(current_list, dtype=complex) @ flux
 
 

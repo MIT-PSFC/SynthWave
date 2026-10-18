@@ -1,6 +1,7 @@
 """Tests for EquilibriumField methods."""
 
 import os
+from fractions import Fraction
 
 import freeqdsk
 import numpy as np
@@ -23,6 +24,18 @@ def eqdsk():
         return freeqdsk.geqdsk.read(f)
 
 
+D3D_EQDSK_FILE = os.path.join(
+    PACKAGE_ROOT,
+    "..",
+    "submodules",
+    "OpenFUSIONToolkit",
+    "examples",
+    "TokaMaker",
+    "DIIID",
+    "g192185.02440",
+)
+
+
 class TestEquilibriumField:
     class TestGetPsiOfQ:
         """Tests for EquilibriumField.get_psi_of_q."""
@@ -38,6 +51,16 @@ class TestEquilibriumField:
             q_recovered = float(eq_field.qpsi(psi))
             assert np.isclose(q_recovered, q_target, atol=1e-2), (
                 f"Expected q={q_target}, got q={q_recovered} at psi={psi}"
+            )
+
+        def test_get_psi_of_q_accepts_fraction(self, eqdsk):
+            """get_psi_of_q must accept Fraction q inputs."""
+            q_target = Fraction(3, 2)
+            eq_field = EquilibriumField(eqdsk)
+            psi = eq_field.get_psi_of_q(q_target)
+            q_recovered = float(eq_field.qpsi_abs(psi))
+            assert np.isclose(q_recovered, float(q_target), atol=1e-2), (
+                f"Expected abs(q)={float(q_target)}, got abs(q)={q_recovered} at psi={psi}"
             )
 
         @pytest.mark.parametrize(
@@ -154,17 +177,11 @@ class TestCocos:
 
     @pytest.fixture(scope="class")
     def eqdsk_d3d(self):
-        eqdsk_file = os.path.join(
-            PACKAGE_ROOT,
-            "..",
-            "submodules",
-            "OpenFUSIONToolkit",
-            "examples",
-            "TokaMaker",
-            "DIIID",
-            "g192185.02440",
-        )
-        with open(eqdsk_file, "r") as f:
+        if not os.path.exists(D3D_EQDSK_FILE):
+            pytest.skip(
+                "Test requires DIII-D g192185.02440 EQDSK from OpenFUSIONToolkit"
+            )
+        with open(D3D_EQDSK_FILE, "r") as f:
             eqdsk = freeqdsk.geqdsk.read(f)
 
         return eqdsk
@@ -294,7 +311,13 @@ class TestCocos:
             "eqdsk",
             [
                 "eqdsk_cmod",
-                "eqdsk_d3d",
+                pytest.param(
+                    "eqdsk_d3d",
+                    marks=pytest.mark.skipif(
+                        condition=not os.path.exists(D3D_EQDSK_FILE),
+                        reason="Test requires DIII-D data which is not open source",
+                    ),
+                ),
                 pytest.param(
                     "eqdsk_tcv",
                     marks=pytest.mark.skipif(
@@ -341,7 +364,13 @@ class TestCocos:
             "eqdsk",
             [
                 "eqdsk_cmod",
-                "eqdsk_d3d",
+                pytest.param(
+                    "eqdsk_d3d",
+                    marks=pytest.mark.skipif(
+                        condition=not os.path.exists(D3D_EQDSK_FILE),
+                        reason="Test requires DIII-D data which is not open source",
+                    ),
+                ),
                 pytest.param(
                     "eqdsk_tcv",
                     marks=pytest.mark.skipif(
@@ -398,7 +427,13 @@ class TestCocos:
             "eqdsk",
             [
                 "eqdsk_cmod",
-                "eqdsk_d3d",
+                pytest.param(
+                    "eqdsk_d3d",
+                    marks=pytest.mark.skipif(
+                        condition=not os.path.exists(D3D_EQDSK_FILE),
+                        reason="Test requires DIII-D data which is not open source",
+                    ),
+                ),
                 pytest.param(
                     "eqdsk_tcv",
                     marks=pytest.mark.skipif(
