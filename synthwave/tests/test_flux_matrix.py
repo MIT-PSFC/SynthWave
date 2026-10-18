@@ -85,6 +85,24 @@ class TestFilamentFluxMatrix:
             actual, expected, rtol=1e-11, atol=1e-13 * np.abs(expected).max()
         )
 
+    def test_as_field_divides_out_sensor_area(self):
+        rng = np.random.default_rng(3)
+        sensors = _sensors(rng, 6)
+        filaments = _random_filaments(rng)
+        areas = np.pi * sensors["radius"].data ** 2
+        flux = filament_flux_matrix(sensors, filaments)
+        field = filament_flux_matrix(sensors, filaments, as_field=True)
+        np.testing.assert_allclose(
+            field, flux / areas[None, :], rtol=1e-12, atol=1e-30
+        )
+        currents = rng.normal(size=len(filaments)) + 0j
+        np.testing.assert_allclose(
+            direct_response_biot_savart(sensors, filaments, list(currents), as_field=True),
+            currents @ field,
+            rtol=1e-12,
+            atol=1e-30,
+        )
+
     @pytest.mark.parametrize("max_block_elements", [1, 7, 100, 10**9])
     def test_block_size_does_not_change_result(self, max_block_elements):
         rng = np.random.default_rng(1)
